@@ -1,25 +1,18 @@
-# pantau.yaml — konfigurasi pelacak kode promo / voucher / bansos AI
+# config.yaml — pelacak kode promo / voucher / bansos AI
 
 engine:
-  # sumber aktif: bing (rss), gnews, hn, devto, github, lemmy
-  # ddg sering kena reset koneksi dari jaringan ID -> biarkan nonaktif
-  - bing
   - gnews
-  - hn
-  - github
-  - lemmy
+  - bing
 
-locale: "id-id"
-region: "ID"
-
-max_queries: 6          # kueri per putaran (bergiliran), sisanya putaran berikutnya
+max_queries: 6          # kueri per putaran (bergiliran)
+max_age_hours: 24       # hanya terbitan 24 jam terakhir
 
 rate:
-  delay_min: 2.0        # jeda acak antar request (detik)
+  delay_min: 2.0
   delay_max: 4.5
   timeout: 20
   retries: 3
-  workers: 3            # paralel fetch halaman detail
+  workers: 3
   jitter: true
 
 store:
@@ -27,60 +20,47 @@ store:
   export_dir: "data/export"
 
 score:
-  min_keep: 6           # buang hasil di bawah skor ini
-  min_notify: 45        # kirim notifikasi webhook kalau >= ini
-  min_notify_coded: 28  # ...atau kalau ada kode konkret walau skornya lebih rendah
+  min_keep: 6
+  min_notify: 45
+  min_notify_coded: 28
 
 notify:
-  discord_webhook: "${DISCORD_WEBHOOK:-}"   # opsional
-  telegram_token: "${TELEGRAM_TOKEN:-}"     # dari .env
-  telegram_chat: "${TELEGRAM_CHAT:-}"       # kosong = ambil otomatis dari /start
+  discord_webhook: "${DISCORD_WEBHOOK:-}"
+  telegram_token: "${TELEGRAM_TOKEN:-}"
+  telegram_chat: "${TELEGRAM_CHAT:-}"
 
-# kueri pencarian. {brand} {year} {month} diganti otomatis per putaran.
+# frasa yang benar-benar muncul di media 24 jam terakhir
 queries:
-  - "kode promo claude pro {month} {year}"
-  - "claude pro gratis trial kode {year}"
-  - "kode voucher chatgpt plus gratis {month} {year}"
-  - "gemini advanced gratis 12 bulan kode"
-  - "cursor ai free trial promo code {year}"
-  - "github copilot gratis student kode"
-  - "perplexity pro gratis kode promo {month}"
-  - "windsurf kiro free credits promo {year}"
-  - "deepseek api gratis credit voucher"
-  - "midjourney gratis trial code {year}"
-  - "elevenlabs free credits kode"
-  - "v0 vercel promo code {year}"
-  - "bansos ai gratis indonesia {month} {year}"
-  - "kode redeem ai gratis kuota api"
-  - "\"promo code\" ai subscription free {month} {year}"
+  - "claude gratis"
+  - "chatgpt gratis"
+  - "gemini gratis"
+  - "ai gratis untuk mahasiswa"
+  - "bansos ai"
+  - "kredit ai gratis"
+  - "free ai credits"
+  - "promo langganan ai"
+  - "diskon langganan ai"
+  - "kode promo ai"
+  - "voucher ai gratis"
+  - "ai trial gratis"
+  - "gratis token ai"
+  - "akses ai gratis"
 
-# kueri tambahan per situs (site: query) — lebih tajam, lebih sedikit hasil
 site_queries:
-  - "site:reddit.com promo code claude pro free {year}"
-  - "site:github.com \"promo code\" claude chatgpt gemini"
-  - "site:forum indonesia kode voucher ai gratis"
-  - "site:t.me kode promo claude chatgpt"
-  - "site:twitter.com OR site:x.com \"kode voucher\" ai gratis"
+  - "site:t.me kode promo ai"
+  - "site:reddit.com claude pro promo"
+  - "site:reddit.com chatgpt plus free"
 
-# langsung ambil path umpan RSS / JSON
+# umpan RSS tambahan (semua bertanggal, ikut disaring 24 jam)
 feeds:
-  # reddit: pakai .rss (atom) karena endpoint .json diblokir 403
-  - name: reddit_chatgpt
-    url: "https://www.reddit.com/r/ChatGPT/search.rss?q=promo&restrict_sr=1&sort=new"
-  - name: reddit_claudeai
-    url: "https://www.reddit.com/r/ClaudeAI/search.rss?q=promo&restrict_sr=1&sort=new"
-  - name: reddit_freeai
-    url: "https://www.reddit.com/r/freeAI/search.rss?q=promo&restrict_sr=1&sort=new"
-  - name: reddit_freebies
-    url: "https://www.reddit.com/r/freebies/search.rss?q=ai&restrict_sr=1&sort=new"
-  - name: hn_newest
+  - name: hn_freeai
+    url: "https://hnrss.org/newest?q=free+credits+ai"
+  - name: hn_promo
     url: "https://hnrss.org/newest?q=promo+code+ai"
 
-# domain yang dianggap lebih tepercaya (tambahan skor)
 trust:
   "github.com": 3
   "reddit.com": 2
   "news.ycombinator.com": 2
   "dev.to": 1
   "medium.com": 1
-  "forum.indonesia": 1

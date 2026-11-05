@@ -142,6 +142,33 @@ def detect_brand(text: str) -> str:
     return ""
 
 
+PROMO_WORDS = ("gratis", "free", "promo", "voucher", "trial", "diskon",
+               "discount", "klaim", "claim", "giveaway", "coupon", "bonus",
+               "murah", "cuuma", "cuma-cuma")
+
+
+def is_offer(title: str, snippet: str, codes: list[str]) -> bool:
+    """Apakah ini penawaran (promo/bansos), bukan sekadar obrolan soal AI?
+
+    Lolos kalau ada kode konkret, atau judulnya menyebut merek AI + kata promo.
+    """
+    if codes:
+        return True
+    low_title = title.lower()
+    low_snip = snippet.lower()
+    brand_tokens = {k for keys in BRANDS.values() for k in keys}
+    # "ai" umum ikut dihitung, tapi hanya kalau ada kata promo di judul
+    generic = ("ai", "kecerdasan buatan", "chatbot", "asisten ai", "model bahasa")
+    has_brand = any(tok in low_title for tok in brand_tokens) or any(g in low_title for g in generic)
+    has_promo = any(w in low_title for w in PROMO_WORDS)
+    if has_brand and has_promo:
+        return True
+    # judul datar tapi cuplikan jelas menawarkan sesuatu
+    return (any(tok in low_snip for tok in brand_tokens)
+            and any(w in low_snip for w in PROMO_WORDS)
+            and any(w in low_title for w in PROMO_WORDS + ("ai", "openai", "claude")))
+
+
 # --- sumbu AI: hasil wajib menyentuh salah satu ini -------------------
 AI_AXIS = (
     "ai", "llm", "claude", "anthropic", "chatgpt", "openai", "gpt", "gemini",

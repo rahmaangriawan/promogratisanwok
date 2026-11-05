@@ -102,13 +102,23 @@ def harvest(cfg: dict, run_id: int = 0) -> tuple[list[Finding], list[str]]:
         seen.add(key)
         uniq.append(it)
 
+    cutoff = int(time.time()) - int(cfg.get("max_age_hours", 24)) * 3600
+    undated: list[str] = []
     findings: list[Finding] = []
     for it in uniq:
         domain = search.domain_of(it["url"])
         text = f"{it['title']} {it['snippet']}"
         if not extract.is_relevant(it["title"], it["snippet"], it["url"]):
             continue
+        pub = it.get("published")
+        if pub is None:
+            undated.append(it["url"])
+            continue
+        if pub < cutoff:
+            continue
         codes = extract.extract_codes(text)
+        if not extract.is_offer(it["title"], it["snippet"], codes):
+            continue
         brand = extract.detect_brand(text + " " + it["url"])
         score = extract.score_finding(it["title"], it["snippet"], it["url"],
                                       domain, codes, trust, it.get("source", ""))
@@ -117,8 +127,11 @@ def harvest(cfg: dict, run_id: int = 0) -> tuple[list[Finding], list[str]]:
             snippet=it["snippet"], source=it.get("source", ""),
             brand=brand, codes=codes, score=score,
             expiry=extract.guess_expiry(text + " " + it["url"]),
+            published=pub,
             raw={"query": it.get("query", "")},
         ))
+    if undated:
+        errors.append(f"{len(undated)} hasil tanpa tanggal dibuang (jendela 24 jam)")
     return findings, errors
 
 
@@ -184,14 +197,15 @@ def cmd_run(args: argparse.Namespace) -> int:
     store.finish_run(run_id, len(cfg.get("queries") or []), len(findings),
                      new_items, errors)
 
-    print(f"[pantau] putaran #{run_id} · {len(findings)} hasil mentah · "
+    print(f"[pantau] putaran #{run_id} · {len(findings)} temuan · "
           f"{len(kept)} lolos filter · {new_items} baru · "
           f"{time.time() - t0:.1f}s")
     for e in errors[:5]:
         print(f"  ! {e}", file=sys.stderr)
 
     if args.show:
-        for row in store.top(limit=args.limit, min_score=min_keep):
+        for row in store.top(limit=args.limit, min_score=min_keep,
+                             order="new" if args.new else "score"):
             codes = json.loads(row["codes"] or "[]")
             print(f"\n[{row['score']:3d}] {row['title'][:90]}")
             print(f"      {row['domain']}  ·  {row['source']}")
@@ -215,8 +229,8 @@ def cmd_codes(args: argparse.Namespace) -> int:
     print(f"{'KODE':<24} {'MEREK':<12} SKOR  SUMBER")
     print("-" * 78)
     for r in rows:
-        seen = dt.datetime.fromtimestamp(r["first_seen"]).strftime("%d/%m")
-        print(f"{r['code']:<24} {(r['brand'] or '-'):<12} {r['score']:<5} {seen}  {r['url'][:40]}")
+        seen = dt.datetime.fromtimestamp(r["first_seen"]).strftime("%d/%m %H:%M")
+        print(f"{r['code']:<22} {(r['brand'] or '-'):<12} {r['score']:<4} {seen}  {r['url'][:38]}")
     return 0
 
 
@@ -305,6 +319,7 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--show", action="store_true", help="cetak hasil teratas")
     r.add_argument("--dry", action="store_true", help="jangan kirim notifikasi")
     r.add_argument("--limit", type=int, default=20)
+    r.add_argument("--new", action="store_true", help="urutkan dari yang paling baru")
     r.set_defaults(func=cmd_run)
 
     c = sub.add_parser("codes", help="daftar kode baru")

@@ -10,6 +10,8 @@ Semua fungsi mengembalikan list[dict] dengan kunci: url, title, snippet.
 
 from __future__ import annotations
 
+import datetime as _dt
+import email.utils
 import html
 import json
 import random
@@ -18,6 +20,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 from typing import Iterable
 
 UA_POOL = [
@@ -34,7 +37,7 @@ def _ua() -> str:
 
 
 _LAST_HIT: dict[str, float] = {}
-_MIN_GAP = {"reddit.com": 12.0, "www.reddit.com": 12.0, "old.reddit.com": 12.0}
+_MIN_GAP = {"reddit.com": 20.0, "www.reddit.com": 20.0, "old.reddit.com": 20.0}
 
 
 def _get(url: str, timeout: int = 25, retries: int = 3,
@@ -72,6 +75,28 @@ def _clean(s: str) -> str:
     s = re.sub(r"<[^>]+>", " ", s)
     s = html.unescape(s)
     return re.sub(r"\s+", " ", s).strip()
+
+
+def parse_date(raw: str) -> int | None:
+    """Ubah pubDate RSS / waktu ISO jadi epoch. None kalau tidak terbaca."""
+    if not raw:
+        return None
+    raw = _clean(raw)
+    try:  # RFC 822: Wed, 05 Nov 2026 12:00:00 GMT
+        dt = email.utils.parsedate_to_datetime(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp())
+    except Exception:
+        pass
+    try:  # ISO 8601: 2026-11-05T12:00:00Z / +07:00
+        iso = raw.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(iso)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return int(dt.timestamp())
+    except Exception:
+        return None
 
 
 def _domain(url: str) -> str:
@@ -115,6 +140,7 @@ def search_ddg(query: str, timeout: int = 20) -> list[dict]:
 def search_bing(query: str, timeout: int = 20) -> list[dict]:
     url = "https://www.bing.com/search?" + urllib.parse.urlencode({
         "q": query, "format": "rss", "setlang": "id", "cc": "ID",
+        "filters": 'ex1:"ez1"',   # ez1 = 24 jam terakhir
     })
     raw = _get(url, timeout=timeout).decode("utf-8", "replace")
     return _parse_rss(raw)
@@ -132,6 +158,7 @@ def search_github(query: str, timeout: int = 20) -> list[dict]:
             "url": it.get("html_url", ""),
             "title": it.get("title", ""),
             "snippet": (it.get("body") or "")[:600],
+            "published": parse_date(it.get("created_at", "")),
         })
     return out
 
@@ -153,6 +180,8 @@ def _parse_rss(xml: str) -> list[dict]:
             "url": link,
             "title": grab("title"),
             "snippet": (grab("description") or grab("content"))[:600],
+            "published": parse_date(grab("pubDate") or grab("published")
+                                    or grab("dc:date") or grab("updated")),
         })
     for block in re.findall(r"<entry[^>]*>(.*?)</entry>", xml, re.S):
         def grab2(tag: str) -> str:
@@ -168,6 +197,7 @@ def _parse_rss(xml: str) -> list[dict]:
             "url": link,
             "title": grab2("title"),
             "snippet": (grab2("content") or grab2("summary"))[:600],
+            "published": parse_date(grab2("published") or grab2("updated")),
         })
     return out
 
@@ -194,14 +224,17 @@ def _parse_reddit_json(payload: str) -> list[dict]:
             "url": link,
             "title": d.get("title", ""),
             "snippet": (d.get("selftext") or d.get("url_overridden_by_dest") or "")[:600],
+            "published": int(d["created_utc"]) if d.get("created_utc") else None,
         })
     return out
 
 
 # ---------------------------------------------------------------- google news
 def search_gnews(query: str, timeout: int = 20) -> list[dict]:
+    # when:1d dibaca Google News sebagai "terbit dalam 24 jam terakhir"
+    q = query if "when:" in query else f"{query} when:1d"
     url = "https://news.google.com/rss/search?" + urllib.parse.urlencode({
-        "q": query, "hl": "id", "gl": "ID", "ceid": "ID:id",
+        "q": q, "hl": "id", "gl": "ID", "ceid": "ID:id",
     })
     raw = _get(url, timeout=timeout).decode("utf-8", "replace")
     return _parse_rss(raw)
@@ -209,8 +242,10 @@ def search_gnews(query: str, timeout: int = 20) -> list[dict]:
 
 # ---------------------------------------------------------------- hacker news
 def search_hn(query: str, timeout: int = 20) -> list[dict]:
+    cutoff = int(time.time()) - 24 * 3600
     url = "https://hn.algolia.com/api/v1/search_by_date?" + urllib.parse.urlencode({
         "query": query, "tags": "story", "hitsPerPage": 30,
+        "numericFilters": f"created_at_i>{cutoff}",
     })
     data = json.loads(_get(url, timeout=timeout).decode("utf-8", "replace"))
     out = []
@@ -220,6 +255,7 @@ def search_hn(query: str, timeout: int = 20) -> list[dict]:
             "url": link,
             "title": h.get("title") or "",
             "snippet": (h.get("story_text") or h.get("comment_text") or "")[:600],
+            "published": int(h["created_at_i"]) if h.get("created_at_i") else None,
         })
     return out
 
@@ -233,6 +269,7 @@ def search_devto(query: str, timeout: int = 20) -> list[dict]:
         "url": a.get("url", ""),
         "title": a.get("title", ""),
         "snippet": (a.get("description") or "")[:600],
+        "published": parse_date(a.get("published_at", "")),
     } for a in data]
 
 
@@ -249,6 +286,7 @@ def search_lemmy(query: str, timeout: int = 25) -> list[dict]:
             "url": post.get("url") or post.get("ap_id", ""),
             "title": post.get("name", ""),
             "snippet": (post.get("body") or "")[:600],
+            "published": parse_date(post.get("published", "")),
         })
     return out
 

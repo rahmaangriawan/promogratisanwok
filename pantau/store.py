@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS findings (
     last_seen     INTEGER NOT NULL,
     notified      INTEGER NOT NULL DEFAULT 0,
     expiry        TEXT,
+    published     INTEGER,
     raw           TEXT NOT NULL DEFAULT '{}'
 );
 CREATE INDEX IF NOT EXISTS idx_findings_score  ON findings(score DESC, last_seen DESC);
@@ -70,6 +71,7 @@ class Finding:
     codes: list[str] = field(default_factory=list)
     score: int = 0
     expiry: str | None = None
+    published: int | None = None
     raw: dict = field(default_factory=dict)
 
     @property
@@ -102,6 +104,8 @@ class Store:
             cols = {r[1] for r in c.execute("PRAGMA table_info(findings)")}
             if "expiry" not in cols:
                 c.execute("ALTER TABLE findings ADD COLUMN expiry TEXT")
+            if "published" not in cols:
+                c.execute("ALTER TABLE findings ADD COLUMN published INTEGER")
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
@@ -127,18 +131,20 @@ class Store:
             if existing:
                 c.execute(
                     "UPDATE findings SET last_seen=?, score=?, codes=?, snippet=?, "
-                    "expiry=?, raw=? WHERE uid=?",
-                    (now, f.score, row["codes"], f.snippet, f.expiry, row["raw"], row["uid"]),
+                    "expiry=?, published=?, raw=? WHERE uid=?",
+                    (now, f.score, row["codes"], f.snippet, f.expiry, f.published,
+                     row["raw"], row["uid"]),
                 )
                 is_new = False
             else:
                 c.execute(
                     """INSERT INTO findings
                        (uid,url,domain,title,snippet,source,brand,codes,score,
-                        first_seen,last_seen,notified,expiry,raw)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,0,?,?)""",
+                        first_seen,last_seen,notified,expiry,published,raw)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,0,?,?,?)""",
                     (row["uid"], f.url, f.domain, f.title, f.snippet, f.source,
-                     f.brand, row["codes"], f.score, now, now, f.expiry, row["raw"]),
+                     f.brand, row["codes"], f.score, now, now, f.expiry,
+                     f.published, row["raw"]),
                 )
                 is_new = True
             for code in f.codes:
@@ -180,13 +186,17 @@ class Store:
 
     # ---------- baca ----------
 
-    def top(self, limit: int = 50, min_score: int = 0, brand: str | None = None) -> list[dict]:
+    def top(self, limit: int = 50, min_score: int = 0, brand: str | None = None,
+            order: str = "score") -> list[dict]:
         q = "SELECT * FROM findings WHERE score >= ?"
         args: list = [min_score]
         if brand:
             q += " AND brand = ?"
             args.append(brand)
-        q += " ORDER BY score DESC, last_seen DESC LIMIT ?"
+        if order == "new":
+            q += " ORDER BY COALESCE(published, first_seen) DESC, score DESC LIMIT ?"
+        else:
+            q += " ORDER BY score DESC, COALESCE(published, first_seen) DESC LIMIT ?"
         args.append(limit)
         with self._conn() as c:
             return [dict(r) for r in c.execute(q, args)]
