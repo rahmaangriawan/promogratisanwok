@@ -12,18 +12,20 @@
  */
 
 const QUERIES = [
-  "kode promo ai gratis",
-  "claude gratis",
-  "chatgpt gratis",
-  "gemini gratis",
-  "bansos ai",
-  "free ai credits",
+  "AI promo code",
+  "Claude Pro free",
+  "ChatGPT Plus free",
+  "Gemini Advanced free",
+  "free AI credits",
+  "AI subscription discount",
+  "bansos AI",
 ];
 
-const ENGINES = ["gnews", "bing"];
+const ENGINES = ["bing_news", "hn"];
+const SUBS = ["ClaudeAI", "ChatGPT", "OpenAI", "Bard", "freebies"];
 const MAX_AGE_H = 24;
-const MIN_NOTIFY = 45;
-const MIN_NOTIFY_CODED = 28;
+const MIN_NOTIFY = 18;
+const MIN_NOTIFY_CODED = 24;
 
 const PROMO = [
   "gratis", "free", "promo", "voucher", "kode", "code", "redeem", "diskon",
@@ -32,8 +34,9 @@ const PROMO = [
 ];
 
 const PROMO_TITLE = [
-  "gratis", "free", "promo", "voucher", "trial", "diskon", "discount",
-  "klaim", "claim", "giveaway", "coupon", "bonus", "murah", "credit", "kredit", "kuota",
+  "gratis", "free", "freebie", "promo", "voucher", "trial", "diskon",
+  "discount", "klaim", "claim", "giveaway", "coupon", "bonus", "murah",
+  "credit", "kredit", "kuota", "gratuit", "gratuito", "kostenlos",
 ];
 
 const DEAD = [
@@ -230,55 +233,119 @@ async function searchBing(q) {
   return parseFeed(await r.text());
 }
 
-async function searchGNews(q) {
-  const u = `https://news.google.com/rss/search?q=${encodeURIComponent(q + " when:1d")}&hl=id&gl=ID&ceid=ID:id`;
+async function searchBingNews(q) {
+  const u = `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=rss`;
   const r = await fetch(u, { headers: { "User-Agent": "Mozilla/5.0 (compatible; pantau/1.0)" } });
-  if (!r.ok) throw new Error(`gnews ${r.status}`);
+  if (!r.ok) throw new Error(`bing_news ${r.status}`);
   return parseFeed(await r.text());
 }
 
-const ENGINES_FN = { bing: searchBing, gnews: searchGNews };
+async function searchHN(q) {
+  const cutoff = Math.floor(Date.now() / 1000) - MAX_AGE_H * 3600;
+  const u = `https://hn.algolia.com/api/v1/search_by_date?query=${encodeURIComponent(q)}&tags=story&hitsPerPage=30&numericFilters=created_at_i%3E${cutoff}`;
+  const r = await fetch(u);
+  if (!r.ok) throw new Error(`hn ${r.status}`);
+  const data = await r.json();
+  return (data.hits || []).map((h) => ({
+    title: h.title || "",
+    url: h.url || `https://news.ycombinator.com/item?id=${h.objectID}`,
+    snippet: (h.story_text || "").slice(0, 600),
+    published: h.created_at_i || null,
+  }));
+}
+
+async function searchDevto(q) {
+  const r = await fetch("https://dev.to/api/articles/latest?tag=ai&per_page=30");
+  if (!r.ok) throw new Error(`devto ${r.status}`);
+  const data = await r.json();
+  return data.map((a) => ({
+    title: a.title || "",
+    url: a.url || "",
+    snippet: (a.description || "").slice(0, 600),
+    published: a.published_at ? Math.floor(Date.parse(a.published_at) / 1000) : null,
+  }));
+}
+
+async function searchReddit(sub) {
+  const r = await fetch(`https://www.reddit.com/r/${sub}/new/.rss?limit=100`,
+                        { headers: { "User-Agent": "macos:pantau:1.0.0 (by /u/pantau)" } });
+  if (!r.ok) throw new Error(`reddit r/${sub} ${r.status}`);
+  return parseFeed(await r.text());
+}
+
+const ENGINES_FN = { bing: searchBing, bing_news: searchBingNews, hn: searchHN, devto: searchDevto };
 
 async function sha1(str) {
   const buf = await crypto.subtle.digest("SHA-1", new TextEncoder().encode(str));
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+// Bing News membungkus tautan dengan apiclick.aspx?url=...; ambil tautan aslinya
+function unwrapUrl(u) {
+  try {
+    const x = new URL(u);
+    if (x.hostname.endsWith("bing.com") && x.pathname.includes("apiclick")) {
+      const real = x.searchParams.get("url");
+      if (real) return decodeURIComponent(real);
+    }
+  } catch { /* biarkan */ }
+  return u;
+}
+
 const normUrl = (u) => u.split("#")[0].split("&utm_")[0].split("?utm_")[0].replace(/\/$/, "").toLowerCase();
 
 async function collect() {
-  const rows = [];
-  const seen = new Set();
   const cutoff = Math.floor(Date.now() / 1000) - MAX_AGE_H * 3600;
+  const raw = [];
+
+  // satu subreddit bergiliran tiap putaran, supaya tidak kena 429
+  const sub = SUBS[Math.floor(Date.now() / 60000) % SUBS.length];
+  try {
+    const items = await searchReddit(sub);
+    for (const it of items) it.source = `reddit:r/${sub}`;
+    raw.push(...items);
+  } catch (e) {
+    console.log(`reddit gagal: ${e.message}`);
+  }
 
   for (const q of QUERIES) {
     for (const name of ENGINES) {
       try {
         const items = await ENGINES_FN[name](q);
-        for (const it of items) {
-          if (!it.url) continue;
-          if (!it.published || it.published < cutoff) continue;   // 24 jam saja
-          if (!relevant(it.title, it.snippet, it.url)) continue;
-          const text = `${it.title} ${it.snippet}`;
-          const codes = extractCodes(text);
-          if (!isOffer(it.title, it.snippet, codes)) continue;
-          const key = normUrl(it.url) + "|" + it.title.toLowerCase();
-          if (seen.has(key)) continue;
-          seen.add(key);
-          const score = scoreOf(it.title, it.snippet, it.url, name, codes);
-          if (score < 12) continue;
-          let domain = "";
-          try { domain = new URL(it.url).hostname.replace(/^www\./, ""); } catch { /* biarkan kosong */ }
-          rows.push({
-            uid: await sha1(key), url: it.url, domain, title: it.title,
-            snippet: it.snippet, source: name, brand: brandOf(text + " " + it.url),
-            codes: JSON.stringify(codes), score, expiry: null,
-          });
-        }
+        for (const it of items) it.source = name;
+        raw.push(...items);
       } catch (e) {
         console.log(`${name} gagal: ${e.message}`);
       }
     }
+  }
+
+  const rows = [];
+  const seen = new Set();
+  const now = Math.floor(Date.now() / 1000);
+  for (const it of raw) {
+    if (it.url) it.url = unwrapUrl(it.url);
+    // Bing News kadang tidak menyertakan pubDate; pencarian berita sudah
+    // diurutkan berdasarkan kebaruan, jadi dianggap baru.
+    if (!it.published && it.source.startsWith("bing")) it.published = now;
+    if (!it.url || !it.published || it.published < cutoff) continue;
+    if (!relevant(it.title, it.snippet, it.url)) continue;
+    const text = `${it.title} ${it.snippet}`;
+    const codes = extractCodes(text);
+    if (!isOffer(it.title, it.snippet, codes)) continue;
+    const key = normUrl(it.url) + "|" + (it.title || "").toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const score = scoreOf(it.title, it.snippet, it.url, it.source, codes);
+    if (score < 12) continue;
+    let domain = "";
+    try { domain = new URL(it.url).hostname.replace(/^www\./, ""); } catch { /* kosong */ }
+    rows.push({
+      uid: await sha1(key), url: it.url, domain, title: it.title,
+      snippet: it.snippet, source: it.source,
+      brand: brandOf(text + " " + it.url),
+      codes: JSON.stringify(codes), score, expiry: null,
+    });
   }
   return rows;
 }
@@ -337,11 +404,93 @@ export default {
     const rows = await collect();
     const fresh = await store(env, rows);
     const sent = await notify(env, fresh);
-    console.log(`kueri=${QUERIES.length} hasil=${rows.length} baru=${fresh.length} terkirim=${sent}`);
+    const note = `hasil=${rows.length} baru=${fresh.length} kirim=${sent}`;
+    await env.DB.prepare("INSERT INTO heartbeat (ts,kind,note) VALUES (unixepoch(),'cron',?)")
+      .bind(note).run();
+    console.log(note);
   },
 
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === "/pipeline") {
+      const cutoff = Math.floor(Date.now() / 1000) - MAX_AGE_H * 3600;
+      const now = Math.floor(Date.now() / 1000);
+      const raw = [];
+      for (const q of QUERIES) {
+        for (const name of ENGINES) {
+          try {
+            const items = await ENGINES_FN[name](q);
+            for (const it of items) { it.source = name; raw.push(it); }
+          } catch (e) { /* diabaikan */ }
+        }
+      }
+      for (const it of raw) if (!it.published && it.source.startsWith("bing")) it.published = now;
+      const dated = raw.filter((i) => i.published && i.published >= cutoff);
+      const rel = dated.filter((i) => relevant(i.title, i.snippet, i.url));
+      const withCodes = rel.map((i) => ({ i, c: extractCodes(`${i.title} ${i.snippet}`) }));
+      const off = withCodes.filter((x) => isOffer(x.i.title, x.i.snippet, x.c));
+      return Response.json({
+        raw: raw.length, dated: dated.length, rel: rel.length, offer: off.length,
+        contoh_raw: raw.slice(0, 3).map((i) => i.title),
+        contoh_rel: rel.slice(0, 5).map((i) => i.title),
+        contoh_offer: off.slice(0, 5).map((x) => ({ t: x.i.title, c: x.c })),
+      });
+    }
+
+    if (url.pathname === "/collect") {
+      const rows = await collect();
+      return Response.json(rows.map((r) => ({ ...r, uid: undefined })));
+    }
+    if (url.pathname === "/probe") {
+      const targets = {
+        gnews: "https://news.google.com/rss/search?q=ai&hl=id&gl=ID&ceid=ID:id",
+        bing: "https://www.bing.com/search?q=ai&format=rss",
+        hn: "https://hn.algolia.com/api/v1/search_by_date?query=ai&tags=story",
+        devto: "https://dev.to/api/articles/latest?tag=ai&per_page=5",
+        reddit_rss: "https://www.reddit.com/r/ClaudeAI/new/.rss?limit=5",
+        bing_news: "https://www.bing.com/news/search?q=gemini+gratis&format=rss",
+        yahoo_news: "https://news.search.yahoo.com/rss?p=gemini+gratis",
+        google_news_plain: "https://news.google.com/rss?hl=id&gl=ID&ceid=ID:id",
+        duck: "https://html.duckduckgo.com/html/?q=ai",
+      };
+      const out = {};
+      for (const [k, u] of Object.entries(targets)) {
+        try {
+          const r = await fetch(u, { headers: { "User-Agent": "Mozilla/5.0 (compatible; pantau/1.0)" } });
+          const t = await r.text();
+          out[k] = { status: r.status, len: t.length, head: t.slice(0, 120).replace(/\s+/g, " ") };
+        } catch (e) {
+          out[k] = { error: String(e.message) };
+        }
+      }
+      try {
+        const r = await fetch("https://www.bing.com/search?q=gemini+gratis&format=rss&setlang=id&cc=ID");
+        const xml = await r.text();
+        const m = xml.match(/<item[\s\S]*?<\/item>/);
+        out.bing_first_item = m ? m[0].slice(0, 700) : "tanpa item";
+      } catch (e) { out.bing_first_item = String(e.message); }
+      return Response.json(out);
+    }
+
+    if (url.pathname === "/debug") {
+      const cutoff = Math.floor(Date.now() / 1000) - MAX_AGE_H * 3600;
+      const out = [];
+      for (const q of QUERIES) {
+        for (const name of ENGINES) {
+          try {
+            const items = await ENGINES_FN[name](q);
+            const dated = items.filter((i) => i.published && i.published >= cutoff);
+            const rel = dated.filter((i) => relevant(i.title, i.snippet, i.url));
+            const off = rel.filter((i) => isOffer(i.title, i.snippet, extractCodes(`${i.title} ${i.snippet}`)));
+            out.push({ q, name, raw: items.length, dated: dated.length, rel: rel.length, offer: off.length,
+                       sample: (off[0] || rel[0] || items[0] || {}).title || "" });
+          } catch (e) {
+            out.push({ q, name, error: String(e.message) });
+          }
+        }
+      }
+      return Response.json(out);
+    }
     if (url.pathname === "/scan") {
       const rows = await collect();
       const fresh = await store(env, rows);

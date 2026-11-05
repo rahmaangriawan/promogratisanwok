@@ -8,4 +8,4 @@ crons = ["*/2 * * * *"]   # tiap 2 menit
 [[d1_databases]]
 binding = "DB"
 database_name = "pantau"
-database_id = "GANTI_DENGAN_ID_DARI_WRANGLER"
+database_id = "cc450152-b228-400e-b4ae-05990e07b7a8"

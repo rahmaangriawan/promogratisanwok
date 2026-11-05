@@ -52,7 +52,27 @@ dilaporkan tidak dikirim ulang. Hasil CSV/JSON diunggah sebagai artifact 30 hari
 Biaya: repo publik gratis tanpa batas; privat dapat 2.000 menit/bulan
 (1 run ≈ 3–5 menit → masih muat ~400 run).
 
-### B. Cloudflare Worker + D1 — tanpa server, cron bawaan
+### B. Cloudflare Worker + D1 — SUDAH DIPASANG
+
+```
+https://pantau.dalimuntheferdi5.workers.dev
+cron */2 * * * *   (tiap 2 menit)
+D1 : pantau / cc450152-b228-400e-b4ae-05990e07b7a8 (region APAC)
+```
+
+Endpoint: `/scan` paksa putaran, `/top` 30 temuan teratas, `/pipeline` hitung
+tahap filter, `/` ringkasan.
+
+Catatan jaringan: `*.workers.dev` diblokir DNS ISP Indonesia (resolv ke
+`blockpage.xlaxiata.id`). Cron tetap jalan di sisi Cloudflare; untuk membuka
+`/top` dari HP pakai DNS 1.1.1.1 atau VPN.
+
+Sumber yang hidup dari egress Cloudflare: **Bing News**, **Hacker News**.
+Yang mati: Google News (503), Reddit RSS (403/429), dev.to (403), DuckDuckGo
+(challenge). Karena itu worker hanya pelengkap; pemindaian lengkap tetap di
+GitHub Actions.
+
+#### memasang dari nol (kalau perlu ulang)
 
 ```bash
 cd worker
