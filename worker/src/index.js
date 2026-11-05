@@ -505,7 +505,9 @@ export default {
       return Response.json(results);
     }
     const { results } = await env.DB.prepare(
-      "SELECT COUNT(*) AS findings, COUNT(DISTINCT brand) AS brands FROM codes"
+      "SELECT (SELECT COUNT(*) FROM findings) AS findings, " +
+      "(SELECT COUNT(DISTINCT code) FROM codes) AS codes, " +
+      "(SELECT datetime(MAX(ts),'unixepoch') FROM heartbeat) AS cron_terakhir"
     ).all();
     return Response.json({ ok: true, stats: results[0] });
   },
