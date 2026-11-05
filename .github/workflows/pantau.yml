@@ -2,9 +2,14 @@ name: pantau
 
 on:
   schedule:
-    # tiap 4 jam, menit 17 supaya tidak bertabrakan dengan beban puncak GitHub
-    - cron: "17 */4 * * *"
+    - cron: "*/10 * * * *"   # ringan: 2 kueri, tanpa subreddit
+    - cron: "17 */4 * * *"   # berat: semua kueri + subreddit + buka halaman
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "fast atau deep"
+        default: "deep"
+        required: false
 
 concurrency:
   group: pantau-scan
@@ -13,7 +18,8 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+
     steps:
       - uses: actions/checkout@v4
 
@@ -24,7 +30,22 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      # DB ikut antar run: cache paling baru dipulihkan lewat restore-keys
+      - name: tentukan mode
+        id: mode
+        run: |
+          if [ "${{ github.event.schedule }}" = "*/10 * * * *" ]; then
+            echo "flag=--fast" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ github.event.inputs.mode }}" = "fast" ]; then
+              echo "flag=--fast" >> "$GITHUB_OUTPUT"
+            else
+              echo "flag=--deep" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "flag=--deep" >> "$GITHUB_OUTPUT"
+          fi
+
+      # DB ikut antar run: cache terbaru dipulihkan lewat restore-keys
       - name: pulihkan DB
         uses: actions/cache@v4
         with:
@@ -40,12 +61,11 @@ jobs:
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
         run: |
-          python -m pantau.cli run --deep
+          python -m pantau.cli run ${{ steps.mode.outputs.flag }}
           python -m pantau.cli stats
-          python -m pantau.cli export --limit 200
 
       - name: simpan hasil
-        if: always()
+        if: always() && github.event.schedule != '*/10 * * * *'
         uses: actions/upload-artifact@v4
         with:
           name: pantau-export
