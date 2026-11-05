@@ -98,6 +98,17 @@ Perintah itu mencetak `chat_id`, menyimpannya ke DB, dan mengirim satu pesan tes
 Kalau `TELEGRAM_CHAT` kosong, putaran cron berikutnya juga akan menebak sendiri
 dari pesan terakhir yang masuk ke bot.
 
+## jendela waktu
+
+`max_age_hours: 24` di `config.yaml`. Hasil tanpa tanggal terbit dibuang, karena
+tidak bisa dipastikan masih baru. Konsekuensinya sumber yang tidak mengirim
+`pubDate` tidak akan pernah lolos.
+
+Google News dibatasi `when:1d`, Bing `filters=ex1:"ez1"`, HN
+`created_at_i > now-24h`, Reddit `t=day`.
+
+Kalau ingin lebih longgar, naikkan ke `48` atau `72`.
+
 ## catatan teknis
 
 - `rate.delay_min/max` + `retries` dengan backoff — jangan turunkan ke bawah 2 detik.
