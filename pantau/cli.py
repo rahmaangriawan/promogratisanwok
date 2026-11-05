@@ -90,8 +90,10 @@ def harvest(cfg: dict, run_id: int = 0) -> tuple[list[Finding], list[str]]:
         raw += search.run_queries(queries, engines, delay=delay, errors=errors)
 
     # subreddit langsung lewat OAuth: /new menampilkan 100 pos terakhir
+    # subreddit: OAuth kalau ada kredensial, kalau tidak pakai /new/.rss
+    subs = cfg.get("subreddits") or []
     if reddit.configured():
-        for sub in cfg.get("subreddits") or []:
+        for sub in subs:
             try:
                 items = reddit.listing(sub, limit=100)
                 for it in items:
@@ -100,6 +102,15 @@ def harvest(cfg: dict, run_id: int = 0) -> tuple[list[Finding], list[str]]:
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"reddit:r/{sub}:{exc}")
             time.sleep(2)
+    else:
+        for sub in subs:
+            try:
+                items = search.search_rss(f"https://www.reddit.com/r/{sub}/new/.rss?limit=100")
+                for it in items:
+                    it["source"] = f"reddit:r/{sub}"
+                raw.extend(items)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"rss:r/{sub}:{exc}")
 
     for feed in cfg.get("feeds") or []:
         try:
