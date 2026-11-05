@@ -98,6 +98,38 @@ Perintah itu mencetak `chat_id`, menyimpannya ke DB, dan mengirim satu pesan tes
 Kalau `TELEGRAM_CHAT` kosong, putaran cron berikutnya juga akan menebak sendiri
 dari pesan terakhir yang masuk ke bot.
 
+## Reddit lewat OAuth
+
+JSON Reddit tanpa auth diblokir (`403 Blocked`) dari IP datacenter, sedangkan
+endpoint token tetap terbuka. Jadi pakai aplikasi OAuth sendiri:
+
+1. buka https://www.reddit.com/prefs/apps (akun harus punya email terverifikasi)
+2. klik **create another app**
+3. isi: name `pantau`, type **script**, redirect uri `http://localhost:8080`
+4. setelah dibuat, ambil dua nilai:
+   - **client id** = teks pendek tepat di bawah "personal use script"
+   - **secret** = baris berlabel `secret`
+5. isi `.env`:
+
+```
+REDDIT_CLIENT_ID=xxxxx
+REDDIT_CLIENT_SECRET=yyyyy
+```
+
+6. uji:
+
+```bash
+python -m pantau.cli reddit
+# token  : abc123...
+# akun   : u/...
+```
+
+Kalau berhasil, `config.yaml` otomatis memakai `engine: reddit` dan membaca
+`subreddits` (100 pos terakhir per sub, disaring 24 jam). Kalau kredensial
+kosong, blok itu dilewati tanpa error.
+
+Batas Reddit: 100 request/menit. Satu putaran memakai ~10.
+
 ## jendela waktu
 
 `max_age_hours: 24` di `config.yaml`. Hasil tanpa tanggal terbit dibuang, karena

@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import yaml
 
-from . import extract, notify, search
+from . import extract, notify, reddit, search
 from .store import Finding, Store
 
 
@@ -64,6 +64,11 @@ def harvest(cfg: dict, run_id: int = 0) -> tuple[list[Finding], list[str]]:
     delay = (cfg["rate"]["delay_min"], cfg["rate"]["delay_max"])
     trust = {k.lower(): v for k, v in (cfg.get("trust") or {}).items()}
 
+    rcfg = cfg.get("reddit") or {}
+    if rcfg.get("client_id") and rcfg.get("client_secret"):
+        reddit.configure(rcfg["client_id"], rcfg["client_secret"],
+                         rcfg.get("user_agent", ""))
+
     base = expand(cfg.get("queries") or [])
     extra = expand(cfg.get("site_queries") or [])
 
@@ -77,10 +82,24 @@ def harvest(cfg: dict, run_id: int = 0) -> tuple[list[Finding], list[str]]:
     queries = list(rot) + extra
     engines = cfg["engine"] if isinstance(cfg["engine"], list) else [cfg["engine"]]
     engines = [e for e in engines if e in search.ENGINES]
+    if "reddit" in engines and not reddit.configured():
+        engines.remove("reddit")
     raw: list[dict] = []
 
     if engines:
         raw += search.run_queries(queries, engines, delay=delay, errors=errors)
+
+    # subreddit langsung lewat OAuth: /new menampilkan 100 pos terakhir
+    if reddit.configured():
+        for sub in cfg.get("subreddits") or []:
+            try:
+                items = reddit.listing(sub, limit=100)
+                for it in items:
+                    it["source"] = f"reddit:r/{sub}"
+                raw.extend(items)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"reddit:r/{sub}:{exc}")
+            time.sleep(2)
 
     for feed in cfg.get("feeds") or []:
         try:
@@ -309,6 +328,26 @@ def cmd_telegram(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def cmd_reddit(args: argparse.Namespace) -> int:
+    cfg = load_cfg(args.config)
+    r = cfg.get("reddit") or {}
+    reddit.configure(r.get("client_id", ""), r.get("client_secret", ""),
+                     r.get("user_agent", ""))
+    if not reddit.configured():
+        print("REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET belum ada di .env", file=sys.stderr)
+        return 2
+    try:
+        info = reddit.check()
+    except Exception as exc:  # noqa: BLE001
+        print(f"gagal: {exc}", file=sys.stderr)
+        return 1
+    print(f"token  : {info['token']}")
+    print(f"akses  : r/{info['subreddit']} ({info['subscribers']:,} anggota)")
+    posts = reddit.listing("ClaudeAI", limit=5)
+    print(f"listing: {len(posts)} pos terbaru, contoh: {posts[0]['title'][:60] if posts else '-'}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="pantau", description="pelacak kode promo / voucher AI")
     p.add_argument("-c", "--config", default="config.yaml")
@@ -334,6 +373,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("stats", help="ringkasan DB")
     s.set_defaults(func=cmd_stats)
+
+    rd = sub.add_parser("reddit-check", help="validasi kredensial OAuth Reddit")
+    rd.set_defaults(func=cmd_reddit)
 
     tg = sub.add_parser("telegram", help="cek bot + cari chat_id + tes kirim")
     tg.add_argument("--wait", type=int, default=0,

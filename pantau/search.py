@@ -291,8 +291,17 @@ def search_lemmy(query: str, timeout: int = 25) -> list[dict]:
     return out
 
 
+# ---------------------------------------------------------------- reddit (oauth)
+def search_reddit(query: str, timeout: int = 25) -> list[dict]:
+    from . import reddit
+    if not reddit.configured():
+        raise RuntimeError("reddit belum dikonfigurasi (REDDIT_CLIENT_ID / SECRET)")
+    return reddit.search(query)
+
+
 # ---------------------------------------------------------------- orkestrasi
 ENGINES = {
+    "reddit": search_reddit,
     "ddg": search_ddg,
     "bing": search_bing,
     "github": search_github,

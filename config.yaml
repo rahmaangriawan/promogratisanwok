@@ -3,6 +3,7 @@
 engine:
   - gnews
   - bing
+  - reddit        # butuh REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET
 
 max_queries: 6          # kueri per putaran (bergiliran)
 max_age_hours: 24       # hanya terbitan 24 jam terakhir
@@ -50,6 +51,21 @@ site_queries:
   - "site:t.me kode promo ai"
   - "site:reddit.com claude pro promo"
   - "site:reddit.com chatgpt plus free"
+
+# Reddit lewat OAuth application-only. Kalau kredensial kosong, blok ini dilewati.
+reddit:
+  client_id: "${REDDIT_CLIENT_ID:-}"
+  client_secret: "${REDDIT_CLIENT_SECRET:-}"
+  user_agent: "macos:pantau:1.0.0 (by /u/pantau)"
+
+# /new tiap subreddit, 100 pos terakhir, disaring 24 jam
+subreddits:
+  - ChatGPT
+  - ClaudeAI
+  - OpenAI
+  - Bard
+  - singularity
+  - freebies
 
 # umpan RSS tambahan (semua bertanggal, ikut disaring 24 jam)
 feeds:
