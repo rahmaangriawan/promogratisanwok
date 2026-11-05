@@ -103,7 +103,7 @@ def extract_codes(text: str, limit: int = 12) -> list[str]:
 # --- deteksi merek ----------------------------------------------------
 BRANDS: dict[str, tuple[str, ...]] = {
     "claude":       ("claude", "anthropic", "claude pro", "claude max"),
-    "chatgpt":      ("chatgpt", "openai", "gpt-4", "gpt-5", "gpt4"),
+    "chatgpt":      ("chatgpt", "openai", "gpt-4", "gpt-5", "gpt4", "gpt"),
     "gemini":       ("gemini", "google ai", "bard", "google one ai"),
     "copilot":      ("copilot", "github copilot"),
     "cursor":       ("cursor", "cursor.sh", "cursor ai"),
@@ -144,7 +144,14 @@ def detect_brand(text: str) -> str:
 
 PROMO_WORDS = ("gratis", "free", "promo", "voucher", "trial", "diskon",
                "discount", "klaim", "claim", "giveaway", "coupon", "bonus",
-               "murah", "cuuma", "cuma-cuma")
+               "murah", "credit", "kredit", "kuota", "cuma-cuma")
+
+
+NOT_OFFER = (
+    "promo video", "video promo", "promosi", "iklan", "show hn", "showoff",
+    "i made", "i built", "i created", "we built", "we made", "my app",
+    "looking for feedback", "roast my", "rate my",
+)
 
 
 def is_offer(title: str, snippet: str, codes: list[str]) -> bool:
@@ -155,6 +162,8 @@ def is_offer(title: str, snippet: str, codes: list[str]) -> bool:
     if codes:
         return True
     low_title = title.lower()
+    if any(p in low_title for p in NOT_OFFER):
+        return False
     low_snip = snippet.lower()
     brand_tokens = {k for keys in BRANDS.values() for k in keys}
     # "ai" umum ikut dihitung, tapi hanya kalau ada kata promo di judul

@@ -270,6 +270,9 @@ def cmd_export(args: argparse.Namespace) -> int:
     out_dir = cfg["store"]["export_dir"]
     os.makedirs(out_dir, exist_ok=True)
     rows = store.top(limit=args.limit, min_score=int(cfg["score"]["min_keep"]))
+    if args.days:
+        cutoff = int(time.time()) - args.days * 86400
+        rows = [r for r in rows if (r.get("published") or r["first_seen"]) >= cutoff]
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M")
     json_path = os.path.join(out_dir, f"pantau-{stamp}.json")
     csv_path = os.path.join(out_dir, f"pantau-{stamp}.csv")
@@ -380,6 +383,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     e = sub.add_parser("export", help="ekspor JSON + CSV")
     e.add_argument("--limit", type=int, default=200)
+    e.add_argument("--days", type=int, default=3, help="hanya N hari terakhir (0 = semua)")
     e.set_defaults(func=cmd_export)
 
     s = sub.add_parser("stats", help="ringkasan DB")
