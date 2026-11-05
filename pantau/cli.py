@@ -187,6 +187,11 @@ def deep_scan(cfg: dict, findings: list[Finding]) -> None:
 
 def cmd_run(args: argparse.Namespace) -> int:
     cfg = load_cfg(args.config)
+    if args.fast:
+        # mode cepat untuk cron rapat: 2 kueri, tanpa subreddit, tanpa buka halaman
+        cfg["max_queries"] = 2
+        cfg["subreddits"] = []
+        args.deep = False
     store = Store(cfg["store"]["db"])
     run_id = store.start_run()
 
@@ -373,6 +378,8 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--dry", action="store_true", help="jangan kirim notifikasi")
     r.add_argument("--limit", type=int, default=20)
     r.add_argument("--new", action="store_true", help="urutkan dari yang paling baru")
+    r.add_argument("--fast", action="store_true",
+                   help="mode ringan untuk cron rapat: 2 kueri, tanpa subreddit")
     r.set_defaults(func=cmd_run)
 
     c = sub.add_parser("codes", help="daftar kode baru")

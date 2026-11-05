@@ -1,9 +1,10 @@
 /**
- * pantau — versi Cloudflare Worker (Cron Trigger + D1 + Telegram).
+ * pantau — Worker Cloudflare: cron tiap 2 menit + D1 + Telegram.
  *
  * Deploy:
  *   cd worker
- *   npx wrangler d1 create pantau
+ *   npx wrangler login                 # buka browser, klik Allow
+ *   npx wrangler d1 create pantau      # salin database_id ke wrangler.toml
  *   npx wrangler d1 execute pantau --file=schema.sql --remote
  *   npx wrangler secret put TELEGRAM_TOKEN
  *   npx wrangler secret put TELEGRAM_CHAT
@@ -11,20 +12,28 @@
  */
 
 const QUERIES = [
-  'kode promo claude pro gratis',
-  "chatgpt plus free trial promo code",
-  "gemini advanced gratis kode",
-  "cursor ai free trial promo code",
-  "perplexity pro gratis kode",
-  "deepseek api gratis credit voucher",
+  "kode promo ai gratis",
+  "claude gratis",
+  "chatgpt gratis",
+  "gemini gratis",
+  "bansos ai",
+  "free ai credits",
 ];
 
-const ENGINES = ["bing", "gnews"];
+const ENGINES = ["gnews", "bing"];
+const MAX_AGE_H = 24;
+const MIN_NOTIFY = 45;
+const MIN_NOTIFY_CODED = 28;
 
 const PROMO = [
-  "gratis", "free", "trial", "promo", "voucher", "kode", "code", "redeem",
-  "diskon", "discount", "coupon", "klaim", "claim", "bonus", "credit",
-  "kuota", "quota", "giveaway", "hadiah",
+  "gratis", "free", "promo", "voucher", "kode", "code", "redeem", "diskon",
+  "discount", "coupon", "klaim", "claim", "bonus", "credit", "kredit",
+  "kuota", "quota", "giveaway", "hadiah", "trial",
+];
+
+const PROMO_TITLE = [
+  "gratis", "free", "promo", "voucher", "trial", "diskon", "discount",
+  "klaim", "claim", "giveaway", "coupon", "bonus", "murah", "credit", "kredit", "kuota",
 ];
 
 const DEAD = [
@@ -37,14 +46,37 @@ const AI = [
   "copilot", "cursor", "perplexity", "deepseek", "midjourney", "elevenlabs",
   "windsurf", "codeium", "kiro", "grok", "mistral", "poe", "v0", "vercel",
   "groq", "huggingface", "kuota api", "model bahasa", "bansos ai", "token ai",
-  "api ai", "ai gratis", "kredit api", "kredit ai", "free api", "token api",
+  "api ai", "ai gratis", "kredit api", "kredit ai",
 ];
 
 const JUNK = [
   "kode pos", "kode wilayah", "kode bank", "kode negara", "kode plat",
   "kode kbli", "kode kbbi", "arti kata", "kamus", "apkmirror",
-  "mobile legends", "free fire", "pubg", "genshin", "kode otp",
+  "mobile legends", "free fire", "ff max", "codm", "valorant", "roblox",
+  "pubg", "genshin", "diamond", "kode otp",
 ];
+
+const NOT_OFFER = [
+  "promo video", "video promo", "promosi", "iklan", "show hn", "showoff",
+  "i made", "i built", "i created", "we built", "we made", "my app",
+  "looking for feedback", "roast my", "rate my",
+];
+
+const BRANDS = {
+  claude: ["claude", "anthropic"],
+  chatgpt: ["chatgpt", "openai", "gpt-4", "gpt-5", "gpt"],
+  gemini: ["gemini", "google ai", "bard"],
+  copilot: ["copilot"],
+  cursor: ["cursor"],
+  perplexity: ["perplexity", "pplx"],
+  deepseek: ["deepseek"],
+  midjourney: ["midjourney"],
+  elevenlabs: ["elevenlabs"],
+  windsurf: ["windsurf", "codeium"],
+  vercel: ["v0", "vercel"],
+  grok: ["grok", "x.ai"],
+  mistral: ["mistral"],
+};
 
 const STOP = new Set([
   "HTTP", "HTTPS", "HTML", "WWW", "JSON", "API", "SDK", "URL", "GPU", "CPU",
@@ -67,12 +99,19 @@ const PATTERNS = [
 
 function clean(s) {
   return (s || "")
-    .replace(/<!\[CDATA\[/g, " ").replace(/\]\]>/g, " ")
+    .replace(/<!\[CDATA\[/g, " ")
+    .replace(/\]\]>/g, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function parseDate(raw) {
+  if (!raw) return null;
+  const ms = Date.parse(raw);
+  return Number.isNaN(ms) ? null : Math.floor(ms / 1000);
 }
 
 function plausible(code, ctx, quoted) {
@@ -86,12 +125,10 @@ function plausible(code, ctx, quoted) {
   const low = ctx.toLowerCase();
   if (!PROMO.some((w) => low.includes(w))) return false;
 
-  // kode promo hampir selalu memuat angka
   if (!/\d/.test(code)) {
     if (!quoted) return false;
     if (!STRONG.some((w) => low.includes(w))) return false;
   }
-  // token panjang tanpa pemisah = ID teknis
   if (code.length >= 10 && !code.includes("-") && !code.includes("_") &&
       (code.match(/\d/g) || []).length < 2) {
     return false;
@@ -121,41 +158,36 @@ function extractCodes(text, limit = 8) {
   return out;
 }
 
-function brandOf(text) {
-  const t = text.toLowerCase();
-  const map = {
-    claude: ["claude", "anthropic"],
-    chatgpt: ["chatgpt", "openai", "gpt-4", "gpt-5"],
-    gemini: ["gemini", "google ai", "bard"],
-    copilot: ["copilot"],
-    cursor: ["cursor"],
-    perplexity: ["perplexity", "pplx"],
-    deepseek: ["deepseek"],
-    midjourney: ["midjourney"],
-    elevenlabs: ["elevenlabs"],
-    windsurf: ["windsurf", "codeium"],
-    kiro: ["kiro"],
-    vercel: ["v0", "vercel"],
-    grok: ["grok", "x.ai"],
-    mistral: ["mistral"],
-  };
-  for (const [brand, keys] of Object.entries(map)) {
-    if (keys.some((k) => t.includes(k))) return brand;
-  }
-  return "";
-}
-
 function relevant(title, snippet, url) {
   const t = `${title} ${snippet} ${url}`.toLowerCase();
   if (JUNK.some((j) => t.includes(j))) return false;
   return AI.some((a) => (a === "ai" ? /\bai\b|\/ai|ai-/.test(t) : t.includes(a)));
 }
 
+function isOffer(title, snippet, codes) {
+  if (codes.length) return true;
+  const low = title.toLowerCase();
+  if (NOT_OFFER.some((p) => low.includes(p))) return false;
+  const brand = Object.values(BRANDS).flat().some((b) => low.includes(b));
+  const promo = PROMO_TITLE.some((w) => low.includes(w));
+  if (brand && promo) return true;
+  const generic = ["ai", "kecerdasan buatan", "chatbot", "asisten ai", "model bahasa"];
+  return promo && generic.some((g) => low.includes(g));
+}
+
+function brandOf(text) {
+  const t = text.toLowerCase();
+  for (const [brand, keys] of Object.entries(BRANDS)) {
+    if (keys.some((k) => t.includes(k))) return brand;
+  }
+  return "";
+}
+
 function scoreOf(title, snippet, url, source, codes) {
   const t = `${title} ${snippet}`.toLowerCase();
   let s = Math.min(40, codes.length * 18);
   s += Math.min(20, PROMO.filter((w) => t.includes(w)).length * 5);
-  if (/promo|gratis|free|voucher|kode|code/.test(title.toLowerCase())) s += 10;
+  if (PROMO_TITLE.some((w) => title.toLowerCase().includes(w))) s += 10;
   if (t.includes("2026") || url.includes("2026")) s += 8;
   if (DEAD.some((d) => t.includes(d))) s -= 35;
   if (/login|signin|cart|checkout/.test(url.toLowerCase())) s -= 25;
@@ -167,34 +199,39 @@ function scoreOf(title, snippet, url, source, codes) {
 
 function parseFeed(xml) {
   const out = [];
-  const items = xml.match(/<item[\s\S]*?<\/item>/g) || [];
-  const entries = xml.match(/<entry[\s\S]*?<\/entry>/g) || [];
-  for (const block of [...items, ...entries]) {
-    const title = clean((block.match(/<title[^>]*>([\s\S]*?)<\/title>/) || [])[1]);
-    let link = clean((block.match(/<link[^>]*>([\s\S]*?)<\/link>/) || [])[1]);
+  const blocks = [...(xml.match(/<item[\s\S]*?<\/item>/g) || []),
+                  ...(xml.match(/<entry[\s\S]*?<\/entry>/g) || [])];
+  for (const block of blocks) {
+    const pick = (tag) => {
+      const m = block.match(new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`));
+      return m ? clean(m[1]) : "";
+    };
+    let link = pick("link");
     if (!link) {
       const m = block.match(/<link[^>]*href="([^"]+)"/);
       link = m ? m[1] : "";
     }
-    const desc = clean(
-      (block.match(/<description[^>]*>([\s\S]*?)<\/description>/) ||
-        block.match(/<content[^>]*>([\s\S]*?)<\/content>/) ||
-        block.match(/<summary[^>]*>([\s\S]*?)<\/summary>/) || [])[1] || "");
     if (!link) continue;
-    out.push({ title, url: link, snippet: desc.slice(0, 600) });
+    out.push({
+      title: pick("title"),
+      url: link,
+      snippet: (pick("description") || pick("content") || pick("summary")).slice(0, 600),
+      published: parseDate(pick("pubDate") || pick("published") || pick("updated")),
+    });
   }
   return out;
 }
 
 async function searchBing(q) {
-  const u = `https://www.bing.com/search?q=${encodeURIComponent(q)}&format=rss&setlang=id&cc=ID`;
+  const filters = encodeURIComponent('ex1:"ez1"');
+  const u = `https://www.bing.com/search?q=${encodeURIComponent(q)}&format=rss&setlang=id&cc=ID&filters=${filters}`;
   const r = await fetch(u, { headers: { "User-Agent": "Mozilla/5.0 (compatible; pantau/1.0)" } });
   if (!r.ok) throw new Error(`bing ${r.status}`);
   return parseFeed(await r.text());
 }
 
 async function searchGNews(q) {
-  const u = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=id&gl=ID&ceid=ID:id`;
+  const u = `https://news.google.com/rss/search?q=${encodeURIComponent(q + " when:1d")}&hl=id&gl=ID&ceid=ID:id`;
   const r = await fetch(u, { headers: { "User-Agent": "Mozilla/5.0 (compatible; pantau/1.0)" } });
   if (!r.ok) throw new Error(`gnews ${r.status}`);
   return parseFeed(await r.text());
@@ -207,38 +244,35 @@ async function sha1(str) {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-function normUrl(u) {
-  return u.split("#")[0].split("&utm_")[0].split("?utm_")[0].replace(/\/$/, "").toLowerCase();
-}
+const normUrl = (u) => u.split("#")[0].split("&utm_")[0].split("?utm_")[0].replace(/\/$/, "").toLowerCase();
 
 async function collect() {
   const rows = [];
   const seen = new Set();
+  const cutoff = Math.floor(Date.now() / 1000) - MAX_AGE_H * 3600;
+
   for (const q of QUERIES) {
     for (const name of ENGINES) {
       try {
         const items = await ENGINES_FN[name](q);
         for (const it of items) {
           if (!it.url) continue;
+          if (!it.published || it.published < cutoff) continue;   // 24 jam saja
           if (!relevant(it.title, it.snippet, it.url)) continue;
+          const text = `${it.title} ${it.snippet}`;
+          const codes = extractCodes(text);
+          if (!isOffer(it.title, it.snippet, codes)) continue;
           const key = normUrl(it.url) + "|" + it.title.toLowerCase();
           if (seen.has(key)) continue;
           seen.add(key);
-          const text = `${it.title} ${it.snippet}`;
-          const codes = extractCodes(text);
           const score = scoreOf(it.title, it.snippet, it.url, name, codes);
           if (score < 12) continue;
+          let domain = "";
+          try { domain = new URL(it.url).hostname.replace(/^www\./, ""); } catch { /* biarkan kosong */ }
           rows.push({
-            uid: await sha1(key),
-            url: it.url,
-            domain: (() => { try { return new URL(it.url).hostname.replace(/^www\./, ""); } catch { return ""; } })(),
-            title: it.title,
-            snippet: it.snippet,
-            source: name,
-            brand: brandOf(text + " " + it.url),
-            codes: JSON.stringify(codes),
-            score,
-            expiry: null,
+            uid: await sha1(key), url: it.url, domain, title: it.title,
+            snippet: it.snippet, source: name, brand: brandOf(text + " " + it.url),
+            codes: JSON.stringify(codes), score, expiry: null,
           });
         }
       } catch (e) {
@@ -271,26 +305,32 @@ async function store(env, rows) {
 }
 
 async function notify(env, items) {
-  const ready = items.filter((i) => i.score >= 45).slice(0, 12);
+  const ready = items
+    .filter((i) => i.score >= MIN_NOTIFY ||
+                   (JSON.parse(i.codes).length > 0 && i.score >= MIN_NOTIFY_CODED))
+    .slice(0, 10);
   if (!ready.length || !env.TELEGRAM_TOKEN || !env.TELEGRAM_CHAT) return 0;
   const lines = ready.map((i) => {
     const codes = JSON.parse(i.codes);
-    return `\n[${i.score}] ${i.title.slice(0, 80)}\nkode: ${codes.join(", ") || "-"}\n${i.url}`;
+    return `[${i.score}] ${i.title.slice(0, 80)}\nkode: ${codes.join(", ") || "-"}\n${i.url}`;
   });
-  const text = `${ready.length} temuan baru\n` + lines.join("\n\n");
+  const text = `${ready.length} temuan baru\n\n` + lines.join("\n\n");
   const res = await fetch(
     `https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/sendMessage`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: env.TELEGRAM_CHAT, text: text.slice(0, 4000),
-                             disable_web_page_preview: true }),
+      body: JSON.stringify({
+        chat_id: env.TELEGRAM_CHAT,
+        text: text.slice(0, 4000),
+        disable_web_page_preview: true,
+      }),
     }
   );
   return res.ok ? ready.length : 0;
 }
 
-export { extractCodes, plausible, scoreOf, parseFeed, relevant, brandOf };
+export { extractCodes, plausible, scoreOf, parseFeed, relevant, isOffer, brandOf };
 
 export default {
   async scheduled(event, env, ctx) {
@@ -310,12 +350,13 @@ export default {
     }
     if (url.pathname === "/top") {
       const { results } = await env.DB.prepare(
-        "SELECT title, url, score, codes, brand FROM findings ORDER BY score DESC, last_seen DESC LIMIT 30"
+        `SELECT title, url, score, codes, brand, first_seen FROM findings
+         ORDER BY score DESC, first_seen DESC LIMIT 30`
       ).all();
       return Response.json(results);
     }
     const { results } = await env.DB.prepare(
-      "SELECT COUNT(*) AS findings, COUNT(DISTINCT brand) AS brands FROM findings"
+      "SELECT COUNT(*) AS findings, COUNT(DISTINCT brand) AS brands FROM codes"
     ).all();
     return Response.json({ ok: true, stats: results[0] });
   },
