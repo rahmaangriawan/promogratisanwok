@@ -1,0 +1,11 @@
+name = "pantau"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+
+[triggers]
+crons = ["23 */6 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "pantau"
+database_id = "GANTI_DENGAN_ID_DARI_WRANGLER"

@@ -1,0 +1,52 @@
+name: pantau
+
+on:
+  schedule:
+    # tiap 4 jam, menit 17 supaya tidak bertabrakan dengan beban puncak GitHub
+    - cron: "17 */4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: pantau-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      # DB ikut antar run: cache paling baru dipulihkan lewat restore-keys
+      - name: pulihkan DB
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: pantau-db-${{ github.run_id }}
+          restore-keys: |
+            pantau-db-
+
+      - name: pindai
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT: ${{ secrets.TELEGRAM_CHAT }}
+        run: |
+          python -m pantau.cli run --deep
+          python -m pantau.cli stats
+          python -m pantau.cli export --limit 200
+
+      - name: simpan hasil
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pantau-export
+          path: data/export/
+          retention-days: 30
+          if-no-files-found: ignore
