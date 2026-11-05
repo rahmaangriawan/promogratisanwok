@@ -15,6 +15,7 @@ import json
 import random
 import re
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Iterable
@@ -32,10 +33,20 @@ def _ua() -> str:
     return random.choice(UA_POOL)
 
 
-def _get(url: str, timeout: int = 20, retries: int = 3,
+_LAST_HIT: dict[str, float] = {}
+_MIN_GAP = {"reddit.com": 12.0, "www.reddit.com": 12.0, "old.reddit.com": 12.0}
+
+
+def _get(url: str, timeout: int = 25, retries: int = 3,
          data: bytes | None = None, headers: dict | None = None) -> bytes:
+    host = urllib.parse.urlsplit(url).hostname or ""
+    gap = _MIN_GAP.get(host, 1.0)
     last: Exception | None = None
     for attempt in range(retries):
+        wait = gap - (time.monotonic() - _LAST_HIT.get(host, 0.0))
+        if wait > 0:
+            time.sleep(wait)
+        _LAST_HIT[host] = time.monotonic()
         try:
             req = urllib.request.Request(url, data=data)
             req.add_header("User-Agent", _ua())
@@ -45,6 +56,11 @@ def _get(url: str, timeout: int = 20, retries: int = 3,
                 req.add_header(k, v)
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return r.read()
+        except urllib.error.HTTPError as exc:
+            last = exc
+            # reddit memblokir keras kalau dipanggil beruntun: tunggu lebih lama
+            wait_s = (12 + attempt * 10) if exc.code == 429 else (2 ** attempt + random.random())
+            time.sleep(wait_s)
         except Exception as exc:  # noqa: BLE001
             last = exc
             time.sleep((2 ** attempt) + random.random())
@@ -52,6 +68,7 @@ def _get(url: str, timeout: int = 20, retries: int = 3,
 
 
 def _clean(s: str) -> str:
+    s = s.replace("<![CDATA[", " ").replace("]]>", " ")
     s = re.sub(r"<[^>]+>", " ", s)
     s = html.unescape(s)
     return re.sub(r"\s+", " ", s).strip()

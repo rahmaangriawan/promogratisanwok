@@ -202,11 +202,14 @@ class Store:
             )
             return [dict(r) for r in rows]
 
-    def pending_notify(self, min_score: int) -> list[dict]:
+    def pending_notify(self, min_score: int, min_coded: int = 999) -> list[dict]:
+        """Temuan yang belum dilaporkan: skor tinggi, atau ada kode konkret."""
         with self._conn() as c:
             rows = c.execute(
-                "SELECT * FROM findings WHERE notified=0 AND score >= ? ORDER BY score DESC LIMIT 25",
-                (min_score,),
+                "SELECT * FROM findings WHERE notified=0 "
+                "AND (score >= ? OR (codes != '[]' AND score >= ?)) "
+                "ORDER BY score DESC, last_seen DESC LIMIT 25",
+                (min_score, min_coded),
             )
             return [dict(r) for r in rows]
 

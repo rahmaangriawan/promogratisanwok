@@ -29,6 +29,7 @@ store:
 score:
   min_keep: 6           # buang hasil di bawah skor ini
   min_notify: 45        # kirim notifikasi webhook kalau >= ini
+  min_notify_coded: 28  # ...atau kalau ada kode konkret walau skornya lebih rendah
 
 notify:
   discord_webhook: "${DISCORD_WEBHOOK:-}"   # opsional

@@ -36,7 +36,8 @@ const AI = [
   "ai", "llm", "claude", "anthropic", "chatgpt", "openai", "gpt", "gemini",
   "copilot", "cursor", "perplexity", "deepseek", "midjourney", "elevenlabs",
   "windsurf", "codeium", "kiro", "grok", "mistral", "poe", "v0", "vercel",
-  "groq", "huggingface", "kuota api", "model bahasa",
+  "groq", "huggingface", "kuota api", "model bahasa", "bansos ai", "token ai",
+  "api ai", "ai gratis", "kredit api", "kredit ai", "free api", "token api",
 ];
 
 const JUNK = [
@@ -66,7 +67,7 @@ const PATTERNS = [
 
 function clean(s) {
   return (s || "")
-    .replace(/<!\[CDATA\[|\]\]>/g, "")
+    .replace(/<!\[CDATA\[/g, " ").replace(/\]\]>/g, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, " ")

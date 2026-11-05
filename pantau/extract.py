@@ -149,6 +149,8 @@ AI_AXIS = (
     "elevenlabs", "windsurf", "codeium", "kiro", "grok", "xai", "mistral",
     "poe", "v0", "vercel", "nebius", "groq", "together ai", "huggingface",
     "obrolan ai", "asisten ai", "model bahasa", "kecerdasan buatan",
+    "bansos ai", "token ai", "api ai", "ai gratis", "kredit api", "kredit ai",
+    "free api", "token api", "kuota api", "ai starter",
 )
 
 # pola yang jelas sampah non-promo
@@ -156,7 +158,8 @@ JUNK_PATTERNS = (
     "kode pos", "kode wilayah", "kode bank", "kode negara", "kode plat",
     "kode kbli", "kode kbki", "kode kbbi", "arti kata", "kamus",
     "kode apk", "apkmirror", "kode redeem game", "kode voucher ml",
-    "mobile legends", "free fire", "pubg", "genshin", "kode undangan",
+    "mobile legends", "free fire", "ff max", "redeem ff", "codm", "valorant",
+    "roblox", "dragon city", "pubg", "genshin", "kode undangan",
     "kode referral bank", "kode OTP", "kode verifikasi",
 )
 

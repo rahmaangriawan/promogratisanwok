@@ -104,6 +104,9 @@ dari pesan terakhir yang masuk ke bot.
 - Skor 0–100: kode konkret (+40), sinyal promo (+20), kesegaran tahun (+8),
   kepercayaan domain (+), tanda kedaluwarsa (−35), URL jualan/login (−25).
 - Dedupe lewat uid = sha1(url ternormalisasi + judul).
+- Notifikasi dikirim kalau skor ≥ `min_notify` (45) **atau** ada kode konkret
+  dengan skor ≥ `min_notify_coded` (28). Tanpa aturan kedua, temuan seperti
+  "kode CLAUDE50" bisa tidak pernah dikirim hanya karena judulnya pendek.
 - Kode wajib memuat angka; token tanpa angka hanya lolos kalau dikutip dan
   berada dekat frasa "kode promo / voucher code / redeem code". Ini yang
   menyaring nama variabel dan akronim dari hasil GitHub.

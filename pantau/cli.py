@@ -160,7 +160,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         if store.upsert(f):
             new_items += 1
 
-    pending = store.pending_notify(int(cfg["score"]["min_notify"]))
+    pending = store.pending_notify(int(cfg["score"]["min_notify"]),
+                                   int(cfg["score"].get("min_notify_coded", 30)))
     if pending and not args.dry:
         n = cfg.get("notify") or {}
         sent = False
@@ -176,6 +177,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             sent = notify.send_telegram(n["telegram_token"], chat, pending) or sent
         if sent:
             store.mark_notified([p["uid"] for p in pending])
+            print(f"[pantau] telegram: {len(pending)} temuan terkirim")
+        else:
+            print(f"[pantau] telegram: {len(pending)} temuan menunggu, kirim gagal")
 
     store.finish_run(run_id, len(cfg.get("queries") or []), len(findings),
                      new_items, errors)
@@ -277,7 +281,8 @@ def cmd_telegram(args: argparse.Namespace) -> int:
     print(f"chat_id: {chat}")
 
     store = Store(cfg["store"]["db"])
-    pending = store.pending_notify(int(cfg["score"]["min_notify"]))
+    pending = store.pending_notify(int(cfg["score"]["min_notify"]),
+                                   int(cfg["score"].get("min_notify_coded", 30)))
     if pending:
         ok = notify.send_telegram(token, chat, pending)
         print(f"terkirim {len(pending)} temuan" if ok else "gagal kirim")
