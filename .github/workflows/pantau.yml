@@ -2,17 +2,19 @@ name: pantau
 
 on:
   schedule:
-    - cron: "*/10 * * * *"   # ringan: 2 kueri, tanpa subreddit
+    - cron: "*/5 * * * *"    # watch: referral telegram, cepat, tanpa ambang
+    - cron: "*/10 * * * *"   # ringan: 4 kueri + forum
     - cron: "17 */4 * * *"   # berat: semua kueri + subreddit + buka halaman
   workflow_dispatch:
     inputs:
       mode:
-        description: "fast atau deep"
+        description: "watch, fast, atau deep"
         default: "deep"
         required: false
 
+# watch punya grup sendiri supaya tidak mengantre di belakang deep yang 6 menit
 concurrency:
-  group: pantau-scan
+  group: pantau-${{ github.event.schedule || 'manual' }}
   cancel-in-progress: false
 
 jobs:
@@ -33,14 +35,16 @@ jobs:
       - name: tentukan mode
         id: mode
         run: |
-          if [ "${{ github.event.schedule }}" = "*/10 * * * *" ]; then
+          if [ "${{ github.event.schedule }}" = "*/5 * * * *" ]; then
+            echo "flag=--watch" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "*/10 * * * *" ]; then
             echo "flag=--fast" >> "$GITHUB_OUTPUT"
           elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            if [ "${{ github.event.inputs.mode }}" = "fast" ]; then
-              echo "flag=--fast" >> "$GITHUB_OUTPUT"
-            else
-              echo "flag=--deep" >> "$GITHUB_OUTPUT"
-            fi
+            case "${{ github.event.inputs.mode }}" in
+              watch) echo "flag=--watch" >> "$GITHUB_OUTPUT" ;;
+              fast)  echo "flag=--fast" >> "$GITHUB_OUTPUT" ;;
+              *)     echo "flag=--deep" >> "$GITHUB_OUTPUT" ;;
+            esac
           else
             echo "flag=--deep" >> "$GITHUB_OUTPUT"
           fi
@@ -61,7 +65,11 @@ jobs:
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
           REDDIT_CLIENT_SECRET: ${{ secrets.REDDIT_CLIENT_SECRET }}
         run: |
-          python -m pantau.cli run ${{ steps.mode.outputs.flag }}
+          if [ "${{ steps.mode.outputs.flag }}" = "--watch" ]; then
+            python -m pantau.cli watch
+          else
+            python -m pantau.cli run ${{ steps.mode.outputs.flag }}
+          fi
           python -m pantau.cli stats
 
       - name: simpan hasil
