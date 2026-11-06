@@ -117,6 +117,14 @@ BRANDS: dict[str, tuple[str, ...]] = {
     "grok":         ("grok", "x.ai", "xai"),
     "mistral":      ("mistral", "le chat"),
     "poe":          ("poe.com", "poe ai"),
+    "glm":          ("glm", "zhipu", "chatglm", "z.ai"),
+    "kimi":         ("kimi", "moonshot"),
+    "qwen":         ("qwen", "alibaba cloud", "tongyi"),
+    "minimax":      ("minimax", "hailuo"),
+    "ernie":        ("ernie", "wenxin", "baidu"),
+    "doubao":       ("doubao", "bytedance"),
+    "hunyuan":      ("hunyuan", "tencent"),
+    "llama":        ("llama", "meta ai"),
 }
 
 # kata yang menandakan ini promo aktif, bukan sekadar artikel
@@ -164,18 +172,15 @@ def is_offer(title: str, snippet: str, codes: list[str]) -> bool:
     low_title = title.lower()
     if any(p in low_title for p in NOT_OFFER):
         return False
-    low_snip = snippet.lower()
+    # Aturan ketat: kata promo WAJIB ada di judul. Cuplikan saja tidak cukup —
+    # itu sumber utama hasil seperti "Missing claude" yang lolos tanpa penawaran.
+    if not any(w in low_title for w in PROMO_WORDS):
+        return False
     brand_tokens = {k for keys in BRANDS.values() for k in keys}
-    # "ai" umum ikut dihitung, tapi hanya kalau ada kata promo di judul
     generic = ("ai", "kecerdasan buatan", "chatbot", "asisten ai", "model bahasa")
-    has_brand = any(tok in low_title for tok in brand_tokens) or any(g in low_title for g in generic)
-    has_promo = any(w in low_title for w in PROMO_WORDS)
-    if has_brand and has_promo:
-        return True
-    # judul datar tapi cuplikan jelas menawarkan sesuatu
-    return (any(tok in low_snip for tok in brand_tokens)
-            and any(w in low_snip for w in PROMO_WORDS)
-            and any(w in low_title for w in PROMO_WORDS + ("ai", "openai", "claude")))
+    return (any(tok in low_title for tok in brand_tokens)
+            or any(g in low_title for g in generic)
+            or any(w in snippet.lower() for w in brand_tokens))
 
 
 # --- sumbu AI: hasil wajib menyentuh salah satu ini -------------------
@@ -187,6 +192,8 @@ AI_AXIS = (
     "obrolan ai", "asisten ai", "model bahasa", "kecerdasan buatan",
     "bansos ai", "token ai", "api ai", "ai gratis", "kredit api", "kredit ai",
     "free api", "token api", "kuota api", "ai starter",
+    "glm", "zhipu", "kimi", "moonshot", "qwen", "minimax", "ernie", "doubao",
+    "hunyuan", "llama", "tongyi", "z.ai",
 )
 
 # pola yang jelas sampah non-promo
@@ -208,20 +215,42 @@ JUNK_CODE_RE = (
 )
 
 
+STRONG_AXIS = (
+    "claude", "anthropic", "chatgpt", "openai", "gpt", "gemini", "bard",
+    "copilot", "cursor", "perplexity", "pplx", "deepseek", "midjourney",
+    "elevenlabs", "windsurf", "codeium", "kiro", "grok", "xai", "mistral",
+    "poe", "groq", "huggingface", "glm", "zhipu", "chatglm", "z.ai", "kimi",
+    "moonshot", "qwen", "minimax", "ernie", "doubao", "hunyuan", "tongyi",
+)
+
+SOFT_AXIS = (
+    "llm", "kecerdasan buatan", "model bahasa", "chatbot", "api ai",
+    "token ai", "kredit ai", "kuota api", "bansos ai",
+)
+
+
 def is_relevant(title: str, snippet: str, url: str) -> bool:
-    """True kalau hasil ini benar-benar soal layanan AI, bukan 'kode' generik."""
-    text = f"{title} {snippet} {url}".lower()
-    if any(j.lower() in text for j in JUNK_PATTERNS):
+    """True kalau hasil ini benar-benar soal layanan AI, bukan 'kode' generik.
+
+    Judul (dan url) yang menentukan. Cuplikan dari Google News sering memuat
+    judul artikel lain, jadi cuplikan hanya diterima untuk nama merek kuat —
+    kalau tidak, film/agenda budaya "gratis" ikut lolos.
+    """
+    head = f"{title} {url}".lower()
+    body = f"{title} {snippet} {url}".lower()
+
+    if any(j.lower() in body for j in JUNK_PATTERNS):
         return False
-    padded = f" {text} "
-    for term in AI_AXIS:
-        if term == "ai":
-            if " ai " in padded or "ai." in padded or "/ai" in padded or "ai-" in padded:
-                return True
-            continue
-        if term in text:
+
+    for term in STRONG_AXIS:
+        if term in body:
             return True
-    return False
+    for term in SOFT_AXIS:
+        if term in head:
+            return True
+
+    padded = f" {head} "
+    return " ai " in padded or "ai." in padded or "/ai" in padded or "ai-" in padded
 
 
 def code_is_junk(code: str) -> bool:

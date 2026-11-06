@@ -274,8 +274,8 @@ def search_devto(query: str, timeout: int = 20) -> list[dict]:
 
 
 # ---------------------------------------------------------------- lemmy
-def search_lemmy(query: str, timeout: int = 25) -> list[dict]:
-    url = "https://lemmy.world/api/v3/search?" + urllib.parse.urlencode({
+def search_lemmy(query: str, instance: str = "lemmy.world", timeout: int = 25) -> list[dict]:
+    url = f"https://{instance}/api/v3/search?" + urllib.parse.urlencode({
         "q": query, "type_": "Posts", "limit": 30, "sort": "New",
     })
     data = json.loads(_get(url, timeout=timeout).decode("utf-8", "replace"))
@@ -287,6 +287,51 @@ def search_lemmy(query: str, timeout: int = 25) -> list[dict]:
             "title": post.get("name", ""),
             "snippet": (post.get("body") or "")[:600],
             "published": parse_date(post.get("published", "")),
+        })
+    return out
+
+
+# ---------------------------------------------------------------- discourse
+def search_discourse(base: str, query: str, after: str = "",
+                     timeout: int = 20) -> list[dict]:
+    """Forum Discourse (community.openai.com, forum.cursor.com, dst).
+
+    `after` berformat YYYY-MM-DD dan memakai filter bawaan Discourse,
+    jadi server yang menyaring, bukan kita.
+    """
+    base = base.rstrip("/")
+    q = f"{query} after:{after}" if after else query
+    url = f"{base}/search.json?" + urllib.parse.urlencode({"q": q})
+    data = json.loads(_get(url, timeout=timeout).decode("utf-8", "replace"))
+    topics = {str(t.get("id")): (t.get("title") or "") for t in data.get("topics", [])}
+    out = []
+    for post in data.get("posts", []):
+        tid = str(post.get("topic_id", ""))
+        if not tid:
+            continue
+        out.append({
+            "url": f"{base}/t/{tid}/{post.get('post_number', 1)}",
+            "title": topics.get(tid, "") or f"post #{tid}",
+            "snippet": (post.get("blurb") or "")[:600],
+            "published": parse_date(post.get("created_at", "")),
+        })
+    return out
+
+
+# ---------------------------------------------------------------- mastodon
+def search_mastodon(instance: str, query: str, timeout: int = 20) -> list[dict]:
+    host = instance.replace("https://", "").replace("http://", "").strip("/")
+    url = f"https://{host}/api/v2/search?" + urllib.parse.urlencode({
+        "q": query, "type": "statuses", "limit": 40,
+    })
+    data = json.loads(_get(url, timeout=timeout).decode("utf-8", "replace"))
+    out = []
+    for st in data.get("statuses", []) or []:
+        out.append({
+            "url": st.get("url") or st.get("uri") or "",
+            "title": _clean(st.get("content") or "")[:120],
+            "snippet": _clean(st.get("content") or "")[:600],
+            "published": parse_date(st.get("created_at", "")),
         })
     return out
 

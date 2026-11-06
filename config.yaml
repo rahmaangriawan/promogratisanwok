@@ -1,16 +1,17 @@
-# config.yaml — pelacak kode promo / voucher / bansos AI
+# config.yaml — pelacak kode promo / voucher / bansas AI
+
+max_queries: 6          # kueri mesin pencari per putaran (bergiliran)
+max_age_hours: 24       # hanya terbitan 24 jam terakhir
 
 engine:
   - gnews
   - bing
-  - reddit        # butuh REDDIT_CLIENT_ID + REDDIT_CLIENT_SECRET
-
-max_queries: 6          # kueri per putaran (bergiliran)
-max_age_hours: 24       # hanya terbitan 24 jam terakhir
+  - github        # issue/PR sering memuat kode voucher
+  - lemmy
 
 rate:
-  delay_min: 2.0
-  delay_max: 4.5
+  delay_min: 1.5
+  delay_max: 3.5
   timeout: 20
   retries: 3
   workers: 3
@@ -30,53 +31,64 @@ notify:
   telegram_token: "${TELEGRAM_TOKEN:-}"
   telegram_chat: "${TELEGRAM_CHAT:-}"
 
-# frasa yang benar-benar muncul di media 24 jam terakhir
 queries:
   - "claude gratis"
   - "chatgpt gratis"
   - "gemini gratis"
-  - "ai gratis untuk mahasiswa"
+  - "grok gratis"
+  - "deepseek gratis"
+  - "kimi gratis"
+  - "glm gratis"
+  - "qwen gratis"
   - "bansos ai"
   - "kredit ai gratis"
   - "free ai credits"
   - "promo langganan ai"
-  - "diskon langganan ai"
-  - "kode promo ai"
-  - "voucher ai gratis"
   - "ai trial gratis"
   - "gratis token ai"
-  - "akses ai gratis"
 
 site_queries:
   - "site:t.me kode promo ai"
   - "site:reddit.com claude pro promo"
   - "site:reddit.com chatgpt plus free"
 
-# Reddit lewat OAuth application-only. Kalau kredensial kosong, blok ini dilewati.
+# forum Discourse: pencarian memakai filter after: milik Discourse
+forums:
+  - "https://community.openai.com"
+  - "https://forum.cursor.com"
+  - "https://community.n8n.io"
+  - "https://discuss.huggingface.co"
+  - "https://community.vercel.com"
+
+community_queries:
+  - "free credits"
+  - "promo code"
+  - "giveaway"
+
+subreddits:
+  - ClaudeAI
+  - ChatGPT
+  - OpenAI
+  - Bard
+  - LocalLLaMA
+  - freebies
+  - singularity
+
 reddit:
   client_id: "${REDDIT_CLIENT_ID:-}"
   client_secret: "${REDDIT_CLIENT_SECRET:-}"
   user_agent: "macos:pantau:1.0.0 (by /u/pantau)"
 
-# /new tiap subreddit, 100 pos terakhir, disaring 24 jam
-subreddits:
-  - ChatGPT
-  - ClaudeAI
-  - OpenAI
-  - Bard
-  - singularity
-  - freebies
-
-# umpan RSS tambahan (semua bertanggal, ikut disaring 24 jam)
 feeds:
   - name: hn_freeai
     url: "https://hnrss.org/newest?q=free+credits+ai"
-  - name: hn_promo
-    url: "https://hnrss.org/newest?q=promo+code+ai"
 
 trust:
   "github.com": 3
   "reddit.com": 2
   "news.ycombinator.com": 2
-  "dev.to": 1
-  "medium.com": 1
+  "community.openai.com": 3
+  "forum.cursor.com": 3
+  "community.n8n.io": 1
+  "discuss.huggingface.co": 2
+  "community.vercel.com": 1

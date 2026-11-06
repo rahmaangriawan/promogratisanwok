@@ -112,6 +112,22 @@ def harvest(cfg: dict, run_id: int = 0) -> tuple[list[Finding], list[str]]:
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"rss:r/{sub}:{exc}")
 
+    # forum Discourse / komunitas: pakai filter after: supaya server yang menyaring
+    if not cfg.get("_fast"):
+        after = (dt.datetime.now() - dt.timedelta(hours=int(cfg.get("max_age_hours", 24)))
+                 ).strftime("%Y-%m-%d")
+        for base in cfg.get("forums") or []:
+            host = base.split("//")[-1].split("/")[0]
+            for q in (cfg.get("community_queries") or [])[:3]:
+                try:
+                    items = search.search_discourse(base, q, after=after)
+                    for it in items:
+                        it["source"] = f"forum:{host}"
+                    raw.extend(items)
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"forum:{host}:{exc}")
+                time.sleep(1.5)
+
     for feed in cfg.get("feeds") or []:
         try:
             items = search.search_rss(feed["url"])
@@ -187,8 +203,9 @@ def deep_scan(cfg: dict, findings: list[Finding]) -> None:
 
 def cmd_run(args: argparse.Namespace) -> int:
     cfg = load_cfg(args.config)
+    cfg["_fast"] = bool(args.fast)
     if args.fast:
-        # mode cepat untuk cron rapat: 2 kueri, tanpa subreddit, tanpa buka halaman
+        # mode cepat untuk cron rapat: 2 kueri, tanpa subreddit/forum, tanpa buka halaman
         cfg["max_queries"] = 2
         cfg["subreddits"] = []
         args.deep = False

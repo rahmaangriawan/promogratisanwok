@@ -17,9 +17,16 @@ const QUERIES = [
   "ChatGPT Plus free",
   "Gemini Advanced free",
   "free AI credits",
-  "AI subscription discount",
-  "bansos AI",
+  "Kimi free tokens",
 ];
+
+const FORUMS = [
+  "https://community.openai.com",
+  "https://community.n8n.io",
+  "https://community.vercel.com",
+];
+
+const FORUM_QUERIES = ["free credits", "promo code"];
 
 const ENGINES = ["bing_news", "hn"];
 const SUBS = ["ClaudeAI", "ChatGPT", "OpenAI", "Bard", "freebies"];
@@ -50,6 +57,8 @@ const AI = [
   "windsurf", "codeium", "kiro", "grok", "mistral", "poe", "v0", "vercel",
   "groq", "huggingface", "kuota api", "model bahasa", "bansos ai", "token ai",
   "api ai", "ai gratis", "kredit api", "kredit ai",
+  "glm", "zhipu", "chatglm", "z.ai", "kimi", "moonshot", "qwen", "minimax",
+  "ernie", "doubao", "hunyuan", "tongyi", "llama",
 ];
 
 const JUNK = [
@@ -79,6 +88,10 @@ const BRANDS = {
   vercel: ["v0", "vercel"],
   grok: ["grok", "x.ai"],
   mistral: ["mistral"],
+  glm: ["glm", "zhipu", "chatglm", "z.ai"],
+  kimi: ["kimi", "moonshot"],
+  qwen: ["qwen", "tongyi"],
+  minimax: ["minimax", "hailuo"],
 };
 
 const STOP = new Set([
@@ -161,21 +174,33 @@ function extractCodes(text, limit = 8) {
   return out;
 }
 
+const AXIS_STRONG = ["claude", "anthropic", "chatgpt", "openai", "gpt", "gemini",
+  "bard", "copilot", "cursor", "perplexity", "pplx", "deepseek", "midjourney",
+  "elevenlabs", "windsurf", "codeium", "kiro", "grok", "xai", "mistral", "poe",
+  "groq", "huggingface", "glm", "zhipu", "chatglm", "z.ai", "kimi", "moonshot",
+  "qwen", "minimax", "ernie", "doubao", "hunyuan", "tongyi"];
+
+const AXIS_SOFT = ["llm", "kecerdasan buatan", "model bahasa", "chatbot", "api ai",
+  "token ai", "kredit ai", "kuota api", "bansos ai"];
+
 function relevant(title, snippet, url) {
-  const t = `${title} ${snippet} ${url}`.toLowerCase();
-  if (JUNK.some((j) => t.includes(j))) return false;
-  return AI.some((a) => (a === "ai" ? /\bai\b|\/ai|ai-/.test(t) : t.includes(a)));
+  const head = `${title} ${url}`.toLowerCase();
+  const body = `${title} ${snippet} ${url}`.toLowerCase();
+  if (JUNK.some((j) => body.includes(j))) return false;
+  if (AXIS_STRONG.some((a) => body.includes(a))) return true;
+  if (AXIS_SOFT.some((a) => head.includes(a))) return true;
+  return /\bai\b|\/ai|ai-|ai\./.test(head);
 }
 
 function isOffer(title, snippet, codes) {
   if (codes.length) return true;
   const low = title.toLowerCase();
   if (NOT_OFFER.some((p) => low.includes(p))) return false;
+  if (!PROMO_TITLE.some((w) => low.includes(w))) return false;
   const brand = Object.values(BRANDS).flat().some((b) => low.includes(b));
-  const promo = PROMO_TITLE.some((w) => low.includes(w));
-  if (brand && promo) return true;
   const generic = ["ai", "kecerdasan buatan", "chatbot", "asisten ai", "model bahasa"];
-  return promo && generic.some((g) => low.includes(g));
+  return brand || generic.some((g) => low.includes(g))
+    || Object.values(BRANDS).flat().some((b) => snippet.toLowerCase().includes(b));
 }
 
 function brandOf(text) {
@@ -273,6 +298,25 @@ async function searchReddit(sub) {
   return parseFeed(await r.text());
 }
 
+// forum Discourse: search.json + filter after: (server yang menyaring tanggal)
+async function searchDiscourse(base, query) {
+  const after = new Date(Date.now() - MAX_AGE_H * 3600e3).toISOString().slice(0, 10);
+  const u = `${base}/search.json?q=${encodeURIComponent(`${query} after:${after}`)}`;
+  const r = await fetch(u, { headers: { "User-Agent": "Mozilla/5.0 (compatible; pantau/1.0)" } });
+  if (!r.ok) throw new Error(`discourse ${base} ${r.status}`);
+  const data = await r.json();
+  const titles = Object.fromEntries((data.topics || []).map((t) => [String(t.id), t.title || ""]));
+  return (data.posts || []).map((p) => {
+    const tid = String(p.topic_id || "");
+    return {
+      title: titles[tid] || `post #${tid}`,
+      url: `${base}/t/${tid}/${p.post_number || 1}`,
+      snippet: (p.blurb || "").slice(0, 600),
+      published: p.created_at ? Math.floor(Date.parse(p.created_at) / 1000) : null,
+    };
+  }).filter((x) => x.url.includes("/t/"));
+}
+
 const ENGINES_FN = { bing: searchBing, bing_news: searchBingNews, hn: searchHN, devto: searchDevto };
 
 async function sha1(str) {
@@ -316,6 +360,19 @@ async function collect() {
         raw.push(...items);
       } catch (e) {
         console.log(`${name} gagal: ${e.message}`);
+      }
+    }
+  }
+
+  // forum komunitas: ini yang paling sering memuat kode voucher
+  for (const base of FORUMS) {
+    for (const q of FORUM_QUERIES) {
+      try {
+        const items = await searchDiscourse(base, q);
+        for (const it of items) it.source = `forum:${base.split("//")[1]}`;
+        raw.push(...items);
+      } catch (e) {
+        console.log(`forum ${base} gagal: ${e.message}`);
       }
     }
   }
@@ -451,6 +508,10 @@ export default {
         bing_news: "https://www.bing.com/news/search?q=gemini+gratis&format=rss",
         yahoo_news: "https://news.search.yahoo.com/rss?p=gemini+gratis",
         google_news_plain: "https://news.google.com/rss?hl=id&gl=ID&ceid=ID:id",
+        discourse_openai: "https://community.openai.com/search.json?q=free%20credits%20after%3A2026-11-05",
+        discourse_cursor: "https://forum.cursor.com/search.json?q=promo",
+        discourse_n8n: "https://community.n8n.io/search.json?q=free",
+        lemmy: "https://lemmy.world/api/v3/search?q=free%20ai&type_=Posts&limit=5",
         duck: "https://html.duckduckgo.com/html/?q=ai",
       };
       const out = {};
