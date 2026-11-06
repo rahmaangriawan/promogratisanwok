@@ -161,6 +161,32 @@ Google News dibatasi `when:1d`, Bing `filters=ex1:"ez1"`, HN
 
 Kalau ingin lebih longgar, naikkan ke `48` atau `72`.
 
+## sumber komunitas / forum
+
+Selain mesin pencari, ada tiga jalur komunitas yang sudah tersambung:
+
+| jalur | cara | status |
+|---|---|---|
+| Forum Discourse | `search.json?q=... after:YYYY-MM-DD` — server yang menyaring tanggal | ✅ community.openai.com, forum.cursor.com, community.n8n.io, discuss.huggingface.co, community.vercel.com |
+| Reddit | OAuth (`/search`, `/r/<sub>/new`) atau fallback `/r/<sub>/new/.rss` | ✅ (RSS kena jeda 20 s/host) |
+| Lemmy | `/api/v3/search` | ✅ lemmy.world |
+| Mastodon | `/api/v2/search?type=statuses` | ⚠️ sering kosong untuk kueri promo |
+| Telegram | `t.me/s/<kanal>` lewat pencarian `site:t.me` | ✅ tidak langsung |
+| HN / GitHub / dev.to | Algolia, Search API, artikel terbaru | ✅ |
+
+Menambah forum baru: cari di `config.yaml` bagian `forums`, tempel URL basis forum
+(harus Discourse — cirinya ada `/search.json`). Contoh tambahan:
+
+```yaml
+forums:
+  - "https://community.openai.com"
+  - "https://discuss.huggingface.co"
+  - "https://forum.cursor.com"
+```
+
+Kuota sumber berbagi satu pool: `max_queries` mengatur berapa kueri mesin pencari
+per putaran (bergiliran), sementara forum selalu jalan penuh.
+
 ## catatan teknis
 
 - `rate.delay_min/max` + `retries` dengan backoff — jangan turunkan ke bawah 2 detik.
