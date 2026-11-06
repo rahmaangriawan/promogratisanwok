@@ -172,6 +172,8 @@ def harvest(cfg: dict, run_id: int = 0) -> tuple[list[Finding], list[str]]:
         codes = extract.extract_codes(text)
         if not extract.is_offer(it["title"], it["snippet"], codes):
             continue
+        if extract.is_landing(it["url"]):
+            continue
         brand = extract.detect_brand(text + " " + it["url"])
         score = extract.score_finding(it["title"], it["snippet"], it["url"],
                                       domain, codes, trust, it.get("source", ""))

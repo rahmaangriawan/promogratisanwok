@@ -162,6 +162,11 @@ NOT_OFFER = (
 )
 
 
+def is_landing(url: str) -> bool:
+    low = url.lower()
+    return any(x in low for x in LANDING)
+
+
 def is_offer(title: str, snippet: str, codes: list[str]) -> bool:
     """Apakah ini penawaran (promo/bansos), bukan sekadar obrolan soal AI?
 
@@ -197,6 +202,12 @@ AI_AXIS = (
 )
 
 # pola yang jelas sampah non-promo
+# halaman produk/landing resmi — bukan promo, bukan kode
+LANDING = (
+    "plans/free", "/pricing", "/plans", "signin", "sign-in", "login",
+    "/download", "/install", "play.google", "apps.apple",
+)
+
 JUNK_PATTERNS = (
     "kode pos", "kode wilayah", "kode bank", "kode negara", "kode plat",
     "kode kbli", "kode kbki", "kode kbbi", "arti kata", "kamus",

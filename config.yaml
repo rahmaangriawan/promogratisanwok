@@ -5,9 +5,15 @@ max_age_hours: 24       # hanya terbitan 24 jam terakhir
 
 engine:
   - gnews
-  - bing
+  - bing_html     # halaman hasil Bing (lebih banyak dari RSS-nya)
+  - yandex        # HTML; sering kena captcha, jadi hasilnya bolong-bolong
   - github        # issue/PR sering memuat kode voucher
   - lemmy
+
+# Search API resmi Yandex (gratis, 100 kueri/hari). Isi kalau captcha mengganggu.
+yandex:
+  user: "${YANDEX_USER:-}"
+  key: "${YANDEX_KEY:-}"
 
 rate:
   delay_min: 1.5
