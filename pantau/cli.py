@@ -205,9 +205,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     cfg = load_cfg(args.config)
     cfg["_fast"] = bool(args.fast)
     if args.fast:
-        # mode cepat untuk cron rapat: 2 kueri, tanpa subreddit/forum, tanpa buka halaman
-        cfg["max_queries"] = 2
+        # mode cepat untuk cron rapat: 4 kueri bergiliran + forum, tanpa subreddit
+        # (subreddit butuh jeda ~20 detik per sub) dan tanpa buka halaman
+        cfg["max_queries"] = 4
         cfg["subreddits"] = []
+        cfg["community_queries"] = (cfg.get("community_queries") or [])[:1]
         args.deep = False
     store = Store(cfg["store"]["db"])
     run_id = store.start_run()
