@@ -28,6 +28,16 @@ const FORUMS = [
 
 const FORUM_QUERIES = ["free credits", "promo code"];
 
+// kanal Telegram publik yang sering membagikan tautan referral AI
+const CHANNELS = ["freeaicredits", "claudeai", "promogratisan"];
+
+// referral merek AI: selalu dikirim, tanpa ambang skor
+const REF_KNOWN = /https?:\/\/(?:www\.)?(?:claude\.ai\/referral|chatgpt\.com\/invite|openai\.com\/invite|grok\.com\/referral|x\.ai\/invite|perplexity\.ai\/invite|cursor\.com\/referral|poe\.com\/invite|deepseek\.com\/invite|z\.ai\/invite|kimi\.com\/invite|qwen\.ai\/invite|gemini\.google\.com\/share|agentrouter\.org|openrouter\.ai|together\.ai|groq\.com|huggingface\.co\/join|copilot\.microsoft\.com\/invite)[^\s"'<>)]*/gi;
+
+const AFFILIATE = ["amazon.", "myntr.in", "bilty.co", "flipkart", "aliexpress",
+  "shopee", "tokopedia", "lazada", "bukalapak", "bit.ly", "linktr.ee", "amzn.to",
+  "fkrt.it", "cuelinks", "earnkaro", "invl.io"];
+
 const ENGINES = ["bing_news", "hn"];
 const SUBS = ["ClaudeAI", "ChatGPT", "OpenAI", "Bard", "freebies"];
 const MAX_AGE_H = 24;
@@ -317,6 +327,34 @@ async function searchDiscourse(base, query) {
   }).filter((x) => x.url.includes("/t/"));
 }
 
+async function scanChannel(channel) {
+  const u = `https://t.me/s/${channel}`;
+  const r = await fetch(u, { headers: { "User-Agent": "Mozilla/5.0 (Macintosh) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" } });
+  if (!r.ok) throw new Error(`tg ${channel} ${r.status}`);
+  const html = await r.text();
+  const texts = [...html.matchAll(/<div class="tgme_widget_message_text[^"]*"[^>]*>([\s\S]*?)<\/div>/g)]
+    .map((m) => clean(m[1].replace(/<br\s*\/?>/g, "\n")))
+    .filter(Boolean);
+  const links = [...html.matchAll(/<a class="tgme_widget_message_date" href="([^"]+)"/g)]
+    .map((m) => m[1]);
+  return texts.map((t, i) => ({
+    text: t,
+    url: links[i] || `https://t.me/${channel}`,
+    published: Math.floor(Date.now() / 1000),
+    channel,
+  }));
+}
+
+function refLinks(text) {
+  const out = [];
+  const seen = new Set();
+  for (const m of text.matchAll(REF_KNOWN)) {
+    const link = m[0].replace(/[.,)]+$/, "");
+    if (!seen.has(link)) { seen.add(link); out.push(link); }
+  }
+  return out;
+}
+
 const ENGINES_FN = { bing: searchBing, bing_news: searchBingNews, hn: searchHN, devto: searchDevto };
 
 async function sha1(str) {
@@ -377,8 +415,42 @@ async function collect() {
     }
   }
 
+  // kanal Telegram: tautan referral = prioritas, tidak lewat skor
+  const urgent = [];
+  for (const ch of CHANNELS) {
+    try {
+      const posts = await scanChannel(ch);
+      for (const post of posts) {
+        const refs = refLinks(post.text);
+        for (const link of refs) {
+          urgent.push({
+            uid: await sha1(link.toLowerCase()),
+            url: link,
+            domain: "t.me",
+            title: (post.text.split("\n")[0] || link).slice(0, 140),
+            snippet: post.text.slice(0, 400),
+            source: `tg:${ch}`,
+            brand: brandOf(post.text),
+            codes: "[]",
+            score: 100,
+            expiry: null,
+            published: post.published,
+          });
+        }
+      }
+    } catch (e) {
+      console.log(`tg ${ch} gagal: ${e.message}`);
+    }
+  }
+
   const rows = [];
   const seen = new Set();
+  // tautan referral langsung masuk, tanpa syarat skor
+  for (const r of urgent) {
+    if (seen.has(r.uid)) continue;
+    seen.add(r.uid);
+    rows.push(r);
+  }
   const now = Math.floor(Date.now() / 1000);
   for (const it of raw) {
     if (it.url) it.url = unwrapUrl(it.url);
@@ -436,7 +508,8 @@ async function notify(env, items) {
   if (!ready.length || !env.TELEGRAM_TOKEN || !env.TELEGRAM_CHAT) return 0;
   const lines = ready.map((i) => {
     const codes = JSON.parse(i.codes);
-    return `[${i.score}] ${i.title.slice(0, 80)}\nkode: ${codes.join(", ") || "-"}\n${i.url}`;
+    const urgent = i.score >= 100 ? "⚡ REFERRAL — klaim sekarang\n" : "";
+    return `${urgent}[${i.score}] ${i.title.slice(0, 80)}\nkode: ${codes.join(", ") || "-"}\n${i.url}`;
   });
   const text = `${ready.length} temuan baru\n\n` + lines.join("\n\n");
   const res = await fetch(
@@ -454,7 +527,7 @@ async function notify(env, items) {
   return res.ok ? ready.length : 0;
 }
 
-export { extractCodes, plausible, scoreOf, parseFeed, relevant, isOffer, brandOf };
+export { extractCodes, plausible, scoreOf, parseFeed, relevant, isOffer, brandOf, refLinks };
 
 export default {
   async scheduled(event, env, ctx) {
@@ -540,7 +613,9 @@ export default {
         discourse_n8n: "https://community.n8n.io/search.json?q=free",
         lemmy: "https://lemmy.world/api/v3/search?q=free%20ai&type_=Posts&limit=5",
         duck: "https://html.duckduckgo.com/html/?q=ai",
-        yandex: "https://yandex.com/search/?text=kode+promo+ai+gratis",
+        tme_freeai: "https://t.me/s/freeaicredits",
+        tme_promo: "https://t.me/s/promogratisan",
+        tme_claudeai: "https://t.me/s/claudeai",
         yandex_ru: "https://yandex.ru/search/?text=kode+promo+ai+gratis",
         bing_html: "https://www.bing.com/search?q=kode+promo+ai+gratis",
       };

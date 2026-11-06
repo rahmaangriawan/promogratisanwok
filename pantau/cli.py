@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import yaml
 
-from . import extract, notify, reddit, search
+from . import extract, notify, reddit, search, watch
 from .store import Finding, Store
 
 
@@ -375,6 +375,21 @@ def cmd_telegram(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def cmd_watch(args: argparse.Namespace) -> int:
+    cfg = load_cfg(args.config)
+    store = Store(cfg["store"]["db"])
+    total, sent = watch.scan(cfg, store, dry=args.dry)
+    print(f"[watch] {total} tautan/post baru · terkirim {sent}")
+    if args.show:
+        for row in store.top(limit=10, min_score=60, order="new"):
+            codes = json.loads(row["codes"] or "[]")
+            print(f"[{row['score']}] {row['title'][:70]}")
+            print(f"      {row['url']}")
+            if codes:
+                print(f"      kode: {', '.join(codes)}")
+    return 0
+
+
 def cmd_reddit(args: argparse.Namespace) -> int:
     cfg = load_cfg(args.config)
     r = cfg.get("reddit") or {}
@@ -423,6 +438,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("stats", help="ringkasan DB")
     s.set_defaults(func=cmd_stats)
+
+    w = sub.add_parser("watch", help="jalur cepat: referral & kode dari Telegram")
+    w.add_argument("--dry", action="store_true", help="jangan kirim notifikasi")
+    w.add_argument("--show", action="store_true")
+    w.set_defaults(func=cmd_watch)
 
     rd = sub.add_parser("reddit-check", help="validasi kredensial OAuth Reddit")
     rd.set_defaults(func=cmd_reddit)

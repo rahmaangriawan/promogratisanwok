@@ -71,6 +71,12 @@ community_queries:
   - "promo code"
   - "giveaway"
 
+# jalur cepat (pantau watch): kanal Telegram publik yang ramai tautan referral
+telegram_channels:
+  - freeaicredits
+  - promogratisan
+  - claudeai
+
 subreddits:
   - ClaudeAI
   - ChatGPT
