@@ -64,6 +64,9 @@ def harvest(cfg: dict, run_id: int = 0) -> tuple[list[Finding], list[str]]:
     delay = (cfg["rate"]["delay_min"], cfg["rate"]["delay_max"])
     trust = {k.lower(): v for k, v in (cfg.get("trust") or {}).items()}
 
+    search.configure_yandex((cfg.get("yandex") or {}).get("user", ""),
+                            (cfg.get("yandex") or {}).get("key", ""))
+
     rcfg = cfg.get("reddit") or {}
     if rcfg.get("client_id") and rcfg.get("client_secret"):
         reddit.configure(rcfg["client_id"], rcfg["client_secret"],
@@ -157,6 +160,10 @@ def harvest(cfg: dict, run_id: int = 0) -> tuple[list[Finding], list[str]]:
         if not extract.is_relevant(it["title"], it["snippet"], it["url"]):
             continue
         pub = it.get("published")
+        # Bing/Yandex tidak mengirim pubDate. Filter 24 jam sudah dipasang di
+        # sisi mesin (filters=ex1:"ez1"), jadi hasilnya dianggap baru.
+        if pub is None and it.get("source", "").split(":")[0] in ("bing", "bing_html", "yandex"):
+            pub = int(time.time())
         if pub is None:
             undated.append(it["url"])
             continue

@@ -469,6 +469,33 @@ export default {
 
   async fetch(request, env) {
     const url = new URL(request.url);
+    if (url.pathname === "/binghtml") {
+      const r = await fetch("https://www.bing.com/search?q=kode+promo+ai+gratis&count=30",
+                            { headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                                         "Accept-Language": "id-ID,id;q=0.9" } });
+      const html = await r.text();
+      return Response.json({
+        status: r.status, len: html.length,
+        b_algo: (html.match(/class="b_algo"/g) || []).length,
+        cklinks: (html.match(/bing\.com\/ck\/a/g) || []).length,
+      });
+    }
+
+    if (url.pathname === "/yandex") {
+      const r = await fetch("https://yandex.com/search/?text=kode+promo+ai+gratis",
+                            { headers: { "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+                                         "Accept-Language": "id-ID,id;q=0.9" } });
+      const html = await r.text();
+      return Response.json({
+        status: r.status,
+        len: html.length,
+        serp_item: (html.match(/serp-item/g) || []).length,
+        organic: (html.match(/organic__url|OrganicTitle/g) || []).length,
+        captcha: /showcaptcha|not a robot/i.test(html),
+        cuplikan: html.slice(html.indexOf("serp-list"), html.indexOf("serp-list") + 500),
+      });
+    }
+
     if (url.pathname === "/pipeline") {
       const cutoff = Math.floor(Date.now() / 1000) - MAX_AGE_H * 3600;
       const now = Math.floor(Date.now() / 1000);
@@ -513,6 +540,9 @@ export default {
         discourse_n8n: "https://community.n8n.io/search.json?q=free",
         lemmy: "https://lemmy.world/api/v3/search?q=free%20ai&type_=Posts&limit=5",
         duck: "https://html.duckduckgo.com/html/?q=ai",
+        yandex: "https://yandex.com/search/?text=kode+promo+ai+gratis",
+        yandex_ru: "https://yandex.ru/search/?text=kode+promo+ai+gratis",
+        bing_html: "https://www.bing.com/search?q=kode+promo+ai+gratis",
       };
       const out = {};
       for (const [k, u] of Object.entries(targets)) {

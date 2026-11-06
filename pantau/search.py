@@ -10,6 +10,7 @@ Semua fungsi mengembalikan list[dict] dengan kunci: url, title, snippet.
 
 from __future__ import annotations
 
+import base64
 import datetime as _dt
 import email.utils
 import html
@@ -144,6 +145,114 @@ def search_bing(query: str, timeout: int = 20) -> list[dict]:
     })
     raw = _get(url, timeout=timeout).decode("utf-8", "replace")
     return _parse_rss(raw)
+
+
+# ---------------------------------------------------------------- bing html
+BING_BLOCK = re.compile(r'<li class="b_algo".*?</li>', re.S)
+BING_LINK = re.compile(r'<h2>.*?<a[^>]*href="([^"]+)"', re.S)
+BING_TITLE = re.compile(r"<h2>(.*?)</h2>", re.S)
+BING_SNIP = re.compile(r'<p class="b_lineclamp[^"]*"[^>]*>(.*?)</p>', re.S)
+
+
+def _unwrap_bing(url: str) -> str:
+    """Bing membungkus tautan hasil: /ck/a?...&u=a1<base64url>."""
+    if "bing.com/ck/a" not in url:
+        return url
+    raw = url.replace("&amp;", "&")
+    qs = urllib.parse.parse_qs(urllib.parse.urlparse(raw).query)
+    value = (qs.get("u") or [""])[0]
+    if not value:
+        return url
+    body = value[2:] if value.startswith("a1") else value
+    try:
+        return base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)).decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001
+        return url
+
+
+def search_bing_html(query: str, timeout: int = 25) -> list[dict]:
+    """Halaman hasil Bing. Lebih banyak dan lebih segar daripada RSS-nya."""
+    url = "https://www.bing.com/search?" + urllib.parse.urlencode({
+        "q": query, "count": 30, "setlang": "id", "cc": "ID",
+        "filters": 'ex1:"ez1"',       # 24 jam terakhir
+    })
+    page = _get(url, timeout=timeout).decode("utf-8", "replace")
+    out = []
+    for block in BING_BLOCK.findall(page):
+        link = BING_LINK.search(block)
+        if not link:
+            continue
+        href = _unwrap_bing(link.group(1))
+        if not href.startswith("http"):
+            continue
+        title = BING_TITLE.search(block)
+        snip = BING_SNIP.search(block)
+        out.append({
+            "url": href,
+            "title": _clean(title.group(1)) if title else "",
+            "snippet": _clean(snip.group(1))[:600] if snip else "",
+            "published": None,
+        })
+    return out
+
+
+# ---------------------------------------------------------------- yandex
+_YANDEX_CRED: dict[str, str] = {"user": "", "key": ""}
+
+
+def configure_yandex(user: str, key: str) -> None:
+    _YANDEX_CRED["user"] = user or ""
+    _YANDEX_CRED["key"] = key or ""
+
+
+def search_yandex_xml(query: str, timeout: int = 25) -> list[dict]:
+    """Yandex Search API (XML). Butuh user + key gratis dari yandex.ru/dev/xml."""
+    if not (_YANDEX_CRED["user"] and _YANDEX_CRED["key"]):
+        raise RuntimeError("YANDEX_USER / YANDEX_KEY belum diisi")
+    url = "https://yandex.com/search/xml?" + urllib.parse.urlencode({
+        "user": _YANDEX_CRED["user"], "key": _YANDEX_CRED["key"],
+        "query": query, "lr": 10000, "filter": "strict",
+        "groupby": "attr=d.mode=deep.groups-on-page=10.docs-in-group=1",
+    })
+    xml = _get(url, timeout=timeout).decode("utf-8", "replace")
+    out = []
+    for doc in re.findall(r"<doc[^>]*>(.*?)</doc>", xml, re.S):
+        def tag(name: str) -> str:
+            m = re.search(rf"<{name}[^>]*>(.*?)</{name}>", doc, re.S)
+            return _clean(m.group(1)) if m else ""
+        link = tag("url")
+        if not link:
+            continue
+        out.append({
+            "url": link,
+            "title": tag("title"),
+            "snippet": (tag("passage") or tag("headline"))[:600],
+            "published": parse_date(tag("last-modified") or tag("pubDate")),
+        })
+    return out
+
+
+def search_yandex(query: str, timeout: int = 25) -> list[dict]:
+    """Yandex HTML. Sering mendarat di /showcaptcha — kalau begitu hasil kosong."""
+    url = "https://yandex.com/search/?" + urllib.parse.urlencode({"text": query, "lr": 10000})
+    page = _get(url, timeout=timeout).decode("utf-8", "replace")
+    if "showcaptcha" in page and "serp-item" not in page:
+        # coba sekali lagi lewat host lain
+        page = _get("https://yandex.ru/search/?" + urllib.parse.urlencode({"text": query}),
+                    timeout=timeout).decode("utf-8", "replace")
+    out = []
+    for block in re.findall(r'class="[^"]*serp-item[^"]*"(.{0,4000}?)</li>', page, re.S):
+        m = re.search(r'<a[^>]+href="(https?://[^"]+)"', block)
+        if not m:
+            continue
+        t = re.search(r"<h2[^>]*>(.*?)</h2>", block, re.S)
+        out.append({
+            "url": m.group(1),
+            "title": _clean(t.group(1)) if t else "",
+            "snippet": "",
+            "published": None,
+        })
+    return out
 
 
 # ---------------------------------------------------------------- github
@@ -346,6 +455,9 @@ def search_reddit(query: str, timeout: int = 25) -> list[dict]:
 
 # ---------------------------------------------------------------- orkestrasi
 ENGINES = {
+    "bing_html": search_bing_html,
+    "yandex": search_yandex,
+    "yandex_xml": search_yandex_xml,
     "reddit": search_reddit,
     "ddg": search_ddg,
     "bing": search_bing,
